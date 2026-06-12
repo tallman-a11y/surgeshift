@@ -11,10 +11,41 @@ export type RedditPost = {
 
 const REDDIT_UA = 'SurgeShift/1.0 (marketing intelligence; contact@allshiftai.com)'
 
-async function searchReddit(query: string, subreddit?: string, limit = 25): Promise<RedditPost[]> {
+let cachedToken: { token: string; expires: number } | null = null
+
+async function getAccessToken(): Promise<string | null> {
+  const clientId = process.env.REDDIT_CLIENT_ID
+  const clientSecret = process.env.REDDIT_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+
+  // Return cached token if still valid
+  if (cachedToken && Date.now() < cachedToken.expires) return cachedToken.token
+
+  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      'User-Agent': REDDIT_UA,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials',
+  })
+
+  if (!res.ok) return null
+
+  type TokenResponse = { access_token: string; expires_in: number }
+  const data = await res.json() as TokenResponse
+  cachedToken = {
+    token: data.access_token,
+    expires: Date.now() + (data.expires_in - 60) * 1000,
+  }
+  return cachedToken.token
+}
+
+async function searchReddit(token: string, query: string, subreddit?: string, limit = 25): Promise<RedditPost[]> {
   const base = subreddit
-    ? `https://www.reddit.com/r/${subreddit}/search.json`
-    : 'https://www.reddit.com/search.json'
+    ? `https://oauth.reddit.com/r/${subreddit}/search`
+    : 'https://oauth.reddit.com/search'
 
   const params = new URLSearchParams({
     q: query,
@@ -25,8 +56,10 @@ async function searchReddit(query: string, subreddit?: string, limit = 25): Prom
   })
 
   const res = await fetch(`${base}?${params}`, {
-    headers: { 'User-Agent': REDDIT_UA },
-    next: { revalidate: 0 },
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'User-Agent': REDDIT_UA,
+    },
   })
 
   if (!res.ok) return []
@@ -62,20 +95,25 @@ async function searchReddit(query: string, subreddit?: string, limit = 25): Prom
 }
 
 export async function scanReddit(keywords: string[], subreddits: string[]): Promise<RedditPost[]> {
+  const token = await getAccessToken()
+  if (!token) {
+    console.warn('Reddit: no credentials configured — skipping')
+    return []
+  }
+
   const results: RedditPost[] = []
   const seen = new Set<string>()
 
-  // Search each keyword in each subreddit + global
   const tasks: Promise<RedditPost[]>[] = []
 
   for (const keyword of keywords.slice(0, 8)) {
-    tasks.push(searchReddit(keyword))
+    tasks.push(searchReddit(token, keyword))
     for (const sub of subreddits.slice(0, 6)) {
-      tasks.push(searchReddit(keyword, sub, 15))
+      tasks.push(searchReddit(token, keyword, sub, 15))
     }
   }
 
-  // Throttle: batch in groups of 5 to respect Reddit rate limit
+  // Batch in groups of 5 to respect Reddit rate limit (60 req/min OAuth)
   for (let i = 0; i < tasks.length; i += 5) {
     const batch = tasks.slice(i, i + 5)
     const batchResults = await Promise.allSettled(batch)
@@ -92,7 +130,6 @@ export async function scanReddit(keywords: string[], subreddits: string[]): Prom
     if (i + 5 < tasks.length) await new Promise(r => setTimeout(r, 1000))
   }
 
-  // Filter to posts from last 7 days and sort by recency
   const weekAgo = Date.now() / 1000 - 7 * 86400
   return results
     .filter(p => p.created_utc > weekAgo)
