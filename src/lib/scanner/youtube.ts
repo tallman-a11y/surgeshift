@@ -7,6 +7,14 @@ export type YouTubeResult = {
   platform: 'youtube'
 }
 
+const ENGLISH_PATTERN = /^[\x00-\x7F\s.,!?'"()\-:;@#$%&*]+$/
+
+function isEnglish(text: string): boolean {
+  // Rough check — if >80% of chars are ASCII it's likely English
+  const ascii = text.split('').filter(c => c.charCodeAt(0) < 128).length
+  return ascii / text.length > 0.8
+}
+
 export async function scanYouTube(keywords: string[]): Promise<YouTubeResult[]> {
   const apiKey = process.env.YOUTUBE_API_KEY
   if (!apiKey) return []
@@ -16,28 +24,29 @@ export async function scanYouTube(keywords: string[]): Promise<YouTubeResult[]> 
 
   for (const keyword of keywords.slice(0, 5)) {
     try {
-      // Search for relevant videos
       const searchRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&order=date&maxResults=10&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&order=date&maxResults=10&relevanceLanguage=en&key=${apiKey}`
       )
       if (!searchRes.ok) continue
 
       type YouTubeSearchItem = {
         id: { videoId: string }
-        snippet: { title: string; description: string; channelTitle: string }
+        snippet: { title: string; description: string; channelTitle: string; defaultAudioLanguage?: string; defaultLanguage?: string }
       }
       type YouTubeSearchResponse = { items?: YouTubeSearchItem[] }
       const data = await searchRes.json() as YouTubeSearchResponse
-      const items = data.items ?? []
+      const items = (data.items ?? []).filter(i => {
+        const title = i.snippet.title
+        return isEnglish(title)
+      })
 
       for (const item of items) {
         const videoId = item.id?.videoId
         if (!videoId || seen.has(videoId)) continue
         seen.add(videoId)
 
-        // Get comments for the video
         const commentsRes = await fetch(
-          `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=20&order=relevance&key=${apiKey}`
+          `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=25&order=relevance&key=${apiKey}`
         )
         if (!commentsRes.ok) continue
 
@@ -50,8 +59,11 @@ export async function scanYouTube(keywords: string[]): Promise<YouTubeResult[]> 
 
         for (const comment of comments.items ?? []) {
           const text = comment.snippet.topLevelComment.snippet.textDisplay
-          // Only include question-style comments
-          if (!text.includes('?') && !text.toLowerCase().includes('recommend') && !text.toLowerCase().includes('looking for')) continue
+          if (!isEnglish(text)) continue
+          if (text.length < 30) continue
+          // Only include question-style or recommendation-seeking comments
+          const lower = text.toLowerCase()
+          if (!lower.includes('?') && !lower.includes('recommend') && !lower.includes('looking for') && !lower.includes('how do') && !lower.includes('where can') && !lower.includes('any app') && !lower.includes('study') && !lower.includes('resource')) continue
           if (seen.has(comment.id)) continue
           seen.add(comment.id)
 

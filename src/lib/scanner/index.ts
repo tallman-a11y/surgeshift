@@ -53,15 +53,18 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
     ...redditPosts.map(redditToRaw),
     ...youtubePosts.map(youtubeToRaw),
     ...twitterPosts.map(twitterToRaw),
-  ].filter(p => !existingIds.has(p.id))
+  ]
+    .filter(p => !existingIds.has(p.id))
+    // Drop posts with no meaningful text — image-only posts etc.
+    .filter(p => (p.title + p.body).trim().length > 30)
 
   let newCount = 0
 
-  // Score each post and save opportunities with score >= 55
+  // Score each post and save opportunities with score >= 40
   for (const post of allPosts) {
     try {
       const scored = await scoreAndDraft(brand, post)
-      if (scored.score < 55) continue
+      if (scored.score < 40) continue
 
       await supabase.from('opportunities').insert({
         brand_id: brand.id,
