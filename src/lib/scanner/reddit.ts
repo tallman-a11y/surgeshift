@@ -1,3 +1,6 @@
+// Reddit scanner via Google Custom Search (site:reddit.com)
+// Replaces RSS approach which Reddit now blocks on server IPs
+
 export type RedditPost = {
   id: string
   title: string
@@ -9,92 +12,84 @@ export type RedditPost = {
   score: number
 }
 
-const REDDIT_UA = 'SurgeShift/1.0 (contact@allshiftai.com)'
-
-function parseAtomFeed(xml: string, fallbackSubreddit = ''): RedditPost[] {
-  const entries = xml.match(/<entry>([\s\S]*?)<\/entry>/g) ?? []
-
-  return entries.map(entry => {
-    const title = (entry.match(/<title[^>]*>([\s\S]*?)<\/title>/)?.[1] ?? '')
-      .replace(/<!\[CDATA\[|\]\]>/g, '').trim()
-
-    const url = entry.match(/<link[^>]*href="([^"]+)"/)?.[1] ?? ''
-
-    const author = (entry.match(/<name>([\s\S]*?)<\/name>/)?.[1] ?? '').trim()
-
-    const updated = (entry.match(/<updated>([\s\S]*?)<\/updated>/)?.[1] ?? '').trim()
-    const created_utc = updated ? Math.floor(new Date(updated).getTime() / 1000) : 0
-
-    const content = entry.match(/<content[^>]*>([\s\S]*?)<\/content>/)?.[1] ?? ''
-    const body = content
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-      .replace(/\s+/g, ' ').trim().slice(0, 1000)
-
-    const idRaw = (entry.match(/<id>([\s\S]*?)<\/id>/)?.[1] ?? '').trim()
-    const id = idRaw.split('_').pop() ?? idRaw
-
-    const subreddit = url.match(/reddit\.com\/r\/([^/]+)/)?.[1] ?? fallbackSubreddit
-
-    return { id, title, body, url, subreddit, author, created_utc, score: 0 }
-  }).filter(p => p.id && p.title && p.url)
+function extractSubreddit(url: string): string {
+  return url.match(/reddit\.com\/r\/([^/]+)/)?.[1] ?? 'reddit'
 }
 
-async function fetchRSS(query: string, subreddit?: string, limit = 25): Promise<RedditPost[]> {
-  const base = subreddit
-    ? `https://www.reddit.com/r/${subreddit}/search.rss`
-    : 'https://www.reddit.com/search.rss'
-
-  const params = new URLSearchParams({
-    q: query,
-    sort: 'new',
-    t: 'week',
-    limit: String(limit),
-    restrict_sr: subreddit ? 'true' : 'false',
-  })
-
-  const res = await fetch(`${base}?${params}`, {
-    headers: { 'User-Agent': REDDIT_UA },
-  })
-
-  if (!res.ok) return []
-  const xml = await res.text()
-  return parseAtomFeed(xml, subreddit)
+function urlToId(url: string): string {
+  // Use the post slug from the URL as a stable ID
+  const m = url.match(/comments\/([a-z0-9]+)/)
+  return m ? m[1] : Buffer.from(url).toString('base64').slice(0, 16)
 }
 
 export async function scanReddit(keywords: string[], subreddits: string[]): Promise<RedditPost[]> {
+  const apiKey = process.env.GOOGLE_API_KEY
+  const cseId = process.env.GOOGLE_CSE_ID
+
+  if (!apiKey || !cseId) {
+    console.warn('[reddit] GOOGLE_API_KEY or GOOGLE_CSE_ID not set — skipping Reddit scan')
+    return []
+  }
+
   const results: RedditPost[] = []
   const seen = new Set<string>()
 
-  const tasks: Promise<RedditPost[]>[] = []
-
-  for (const keyword of keywords.slice(0, 8)) {
-    tasks.push(fetchRSS(keyword))
-    for (const sub of subreddits.slice(0, 6)) {
-      tasks.push(fetchRSS(keyword, sub, 15))
-    }
+  // Build query list: keywords alone + keyword+subreddit combos
+  const queries: string[] = []
+  for (const kw of keywords.slice(0, 6)) {
+    queries.push(kw)
+  }
+  // Also targeted subreddit searches
+  for (const sub of subreddits.slice(0, 4)) {
+    const topKw = keywords[0]
+    if (topKw) queries.push(`site:reddit.com/r/${sub} ${topKw}`)
   }
 
-  // Batch in groups of 5 with 1s delay to be respectful
-  for (let i = 0; i < tasks.length; i += 5) {
-    const batch = tasks.slice(i, i + 5)
-    const batchResults = await Promise.allSettled(batch)
-    for (const r of batchResults) {
-      if (r.status === 'fulfilled') {
-        for (const post of r.value) {
-          if (!seen.has(post.id)) {
-            seen.add(post.id)
-            results.push(post)
-          }
-        }
+  for (const query of queries.slice(0, 10)) {
+    try {
+      const q = query.startsWith('site:') ? query : `site:reddit.com/r/ ${query}`
+      const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(q)}&num=10&dateRestrict=w1`
+      const res = await fetch(url)
+      if (!res.ok) {
+        console.warn(`[reddit] Google CSE error ${res.status} for query "${query}"`)
+        continue
       }
+
+      type CSEItem = {
+        title: string
+        link: string
+        snippet: string
+      }
+      type CSEResponse = { items?: CSEItem[] }
+      const data = await res.json() as CSEResponse
+
+      for (const item of data.items ?? []) {
+        if (!item.link.includes('reddit.com/r/')) continue
+        // Skip subreddit listing pages, only keep post links
+        if (!item.link.includes('/comments/')) continue
+
+        const id = urlToId(item.link)
+        if (seen.has(id)) continue
+        seen.add(id)
+
+        results.push({
+          id,
+          title: item.title.replace(/ : r\/\w+$/, '').replace(/ - Reddit$/, '').trim(),
+          body: item.snippet ?? '',
+          url: item.link,
+          subreddit: extractSubreddit(item.link),
+          author: '',
+          created_utc: Math.floor(Date.now() / 1000),
+          score: 0,
+        })
+      }
+
+      // Stay under Google's rate limits
+      await new Promise(r => setTimeout(r, 200))
+    } catch (e) {
+      console.error(`[reddit] Error for query "${query}":`, e)
     }
-    if (i + 5 < tasks.length) await new Promise(r => setTimeout(r, 1000))
   }
 
-  const weekAgo = Date.now() / 1000 - 7 * 86400
   return results
-    // Keep posts where date parsed correctly AND is recent, OR where date couldn't be parsed (assume recent)
-    .filter(p => p.created_utc === 0 || p.created_utc > weekAgo)
-    .sort((a, b) => b.created_utc - a.created_utc)
 }

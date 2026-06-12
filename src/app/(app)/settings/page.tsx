@@ -12,12 +12,12 @@ export default async function SettingsPage() {
   const integrations = [
     {
       name: 'Reddit',
-      description: 'RSS feeds — no credentials required',
-      active: true,
+      description: 'Google Custom Search (site:reddit.com) — GOOGLE_API_KEY + GOOGLE_CSE_ID',
+      active: !!(process.env.GOOGLE_API_KEY && process.env.GOOGLE_CSE_ID),
     },
     {
       name: 'YouTube',
-      description: 'YouTube Data API v3',
+      description: 'YouTube Data API v3 — YOUTUBE_API_KEY',
       active: !!process.env.YOUTUBE_API_KEY,
     },
     {
