@@ -16,7 +16,7 @@ export async function scanTwitter(keywords: string[]): Promise<TwitterResult[]> 
 
   for (const keyword of keywords.slice(0, 4)) {
     try {
-      const query = encodeURIComponent(`${keyword} -is:retweet lang:en has:mentions OR ?`)
+      const query = encodeURIComponent(`"${keyword}" -is:retweet lang:en`)
       const res = await fetch(
         `https://api.twitter.com/2/tweets/search/recent?query=${query}&max_results=20&tweet.fields=text,author_id,created_at&expansions=author_id&user.fields=username`,
         { headers: { Authorization: `Bearer ${bearerToken}` } }

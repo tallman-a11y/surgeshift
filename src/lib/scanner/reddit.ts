@@ -94,6 +94,7 @@ export async function scanReddit(keywords: string[], subreddits: string[]): Prom
 
   const weekAgo = Date.now() / 1000 - 7 * 86400
   return results
-    .filter(p => p.created_utc > weekAgo)
+    // Keep posts where date parsed correctly AND is recent, OR where date couldn't be parsed (assume recent)
+    .filter(p => p.created_utc === 0 || p.created_utc > weekAgo)
     .sort((a, b) => b.created_utc - a.created_utc)
 }
