@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { User, Key, Zap, CheckCircle, XCircle, Link2, Link2Off, Youtube } from 'lucide-react'
+import { User, Key, Zap, CheckCircle, XCircle, Link2, Link2Off, PlayCircle } from 'lucide-react'
 
 type Integration = { name: string; description: string; active: boolean }
 
@@ -76,7 +76,7 @@ export default function SettingsClient({
       platform: 'youtube',
       label: 'YouTube',
       description: 'Post comments on YouTube videos and threads on your behalf',
-      icon: <Youtube size={20} />,
+      icon: <PlayCircle size={20} />,
       connected: youtubeConnected,
       username: youtubeUsername,
       connectHref: '/api/auth/youtube',
