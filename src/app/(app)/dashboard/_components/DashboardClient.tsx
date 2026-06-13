@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ScanSearch, Loader2, Zap, Target, CheckCircle2, TrendingUp } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ScanSearch, Loader2, Zap, Target, CheckCircle2, TrendingUp, Bug, X } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import OpportunityFeed from './OpportunityFeed'
 
@@ -23,6 +24,21 @@ type LastScan = {
   opportunities_found: number
 } | null
 
+type ScanResult = {
+  new_count: number
+  total_scanned: number
+  platforms?: { reddit: number; youtube: number; twitter: number }
+}
+
+type DiagResult = {
+  env: Record<string, boolean>
+  reddit: { count: number; error: string | null; sample: { title: string; url: string }[] }
+  youtube: { count: number; error: string | null }
+  twitter: { count: number; error: string | null }
+  existingOpportunities: number
+  braveProbe?: { status: number; resultCount: number; postCount: number; error: string | null }
+} | null
+
 export default function DashboardClient({
   brands,
   stats,
@@ -32,9 +48,12 @@ export default function DashboardClient({
   stats: Stats
   lastScan: LastScan
 }) {
+  const router = useRouter()
   const [scanning, startScan] = useTransition()
-  const [scanResult, setScanResult] = useState<{ new_count: number; total_scanned: number; platforms?: { reddit: number; youtube: number; twitter: number } } | null>(null)
+  const [diagnosing, startDiag] = useTransition()
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [diagResult, setDiagResult] = useState<DiagResult>(null)
   const [selectedBrandId, setSelectedBrandId] = useState<string>(brands[0]?.id ?? '')
   const [filter, setFilter] = useState<'all' | 'pending' | 'posted' | 'dismissed'>('pending')
 
@@ -50,9 +69,9 @@ export default function DashboardClient({
           body: JSON.stringify({ brandId: selectedBrandId }),
         })
         if (res.ok) {
-          const data = await res.json() as { new_count: number; total_scanned: number; platforms?: { reddit: number; youtube: number; twitter: number } }
+          const data = await res.json() as ScanResult
           setScanResult(data)
-          window.location.reload()
+          router.refresh()
         } else {
           const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string }
           setScanError(err.error ?? `Scan failed (HTTP ${res.status})`)
@@ -60,6 +79,24 @@ export default function DashboardClient({
       } catch (e) {
         setScanError(e instanceof Error ? e.message : 'Scan failed — check your connection')
       }
+    })
+  }
+
+  async function handleDiagnose() {
+    if (!selectedBrandId) return
+    setDiagResult(null)
+    startDiag(async () => {
+      try {
+        const res = await fetch('/api/scan/debug', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId: selectedBrandId }),
+        })
+        if (res.ok) {
+          const data = await res.json() as DiagResult
+          setDiagResult(data)
+        }
+      } catch { /* ignore */ }
     })
   }
 
@@ -104,6 +141,16 @@ export default function DashboardClient({
             </select>
           )}
           <button
+            type="button"
+            onClick={handleDiagnose}
+            disabled={diagnosing || scanning}
+            aria-label="Diagnose — see what each platform is returning"
+            title="Diagnose — see what each platform is returning"
+            style={{ padding: '0.45rem 0.65rem', borderRadius: '0.5rem', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-muted)', cursor: 'pointer' }}
+          >
+            {diagnosing ? <Loader2 size={14} className="animate-spin" /> : <Bug size={14} />}
+          </button>
+          <button
             className="btn-accent"
             onClick={handleScan}
             disabled={scanning || !selectedBrandId}
@@ -121,7 +168,7 @@ export default function DashboardClient({
         <div className="mb-5 px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-medium" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: 'var(--color-green)' }}>
           <CheckCircle2 size={16} />
           <span>
-            Scan complete — {scanResult.new_count} new opportunities from {scanResult.total_scanned} posts
+            Scan complete — {scanResult.new_count} new opportunities from {scanResult.total_scanned} posts scored
             {scanResult.platforms && (
               <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
                 {' '}(Reddit {scanResult.platforms.reddit} · YouTube {scanResult.platforms.youtube} · X {scanResult.platforms.twitter})
@@ -136,6 +183,65 @@ export default function DashboardClient({
         <div className="mb-5 px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-medium" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}>
           <ScanSearch size={16} />
           Scan failed: {scanError}
+        </div>
+      )}
+
+      {/* Diagnostics panel */}
+      {diagResult && (
+        <div className="mb-5 rounded-xl text-xs" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+            <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Scan Diagnostics</span>
+            <button type="button" aria-label="Close diagnostics" onClick={() => setDiagResult(null)} style={{ color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="px-4 py-3 grid gap-2">
+            {/* Env vars */}
+            <div className="flex gap-4 flex-wrap">
+              {Object.entries(diagResult.env).map(([k, v]) => (
+                <span key={k} style={{ color: v ? 'var(--color-green)' : '#ef4444' }}>
+                  {v ? '✓' : '✗'} {k}
+                </span>
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'var(--color-border)' }} />
+            {/* Platform results */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="font-medium mb-1" style={{ color: 'var(--color-text)' }}>Reddit</div>
+                <div style={{ color: diagResult.reddit.count > 0 ? 'var(--color-green)' : '#ef4444' }}>
+                  {diagResult.reddit.count} posts
+                </div>
+                {diagResult.reddit.error && <div style={{ color: '#ef4444' }}>{diagResult.reddit.error}</div>}
+                {diagResult.braveProbe && (
+                  <div style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>
+                    Brave: {diagResult.braveProbe.postCount} results
+                    {diagResult.braveProbe.error && <span style={{ color: '#ef4444' }}> — {diagResult.braveProbe.error}</span>}
+                  </div>
+                )}
+                {diagResult.reddit.sample.slice(0, 2).map((s, i) => (
+                  <div key={i} style={{ color: 'var(--color-text-muted)', marginTop: 2 }} className="truncate">{s.title}</div>
+                ))}
+              </div>
+              <div>
+                <div className="font-medium mb-1" style={{ color: 'var(--color-text)' }}>YouTube</div>
+                <div style={{ color: diagResult.youtube.count > 0 ? 'var(--color-green)' : '#ef4444' }}>
+                  {diagResult.youtube.count} posts
+                </div>
+                {diagResult.youtube.error && <div style={{ color: '#ef4444' }}>{diagResult.youtube.error}</div>}
+              </div>
+              <div>
+                <div className="font-medium mb-1" style={{ color: 'var(--color-text)' }}>X / Twitter</div>
+                <div style={{ color: diagResult.twitter.count > 0 ? 'var(--color-green)' : '#ef4444' }}>
+                  {diagResult.twitter.count} posts
+                </div>
+                {diagResult.twitter.error && <div style={{ color: '#ef4444' }}>{diagResult.twitter.error}</div>}
+              </div>
+            </div>
+            <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
+              {diagResult.existingOpportunities} opportunities already in DB (already-seen posts are skipped)
+            </div>
+          </div>
         </div>
       )}
 
