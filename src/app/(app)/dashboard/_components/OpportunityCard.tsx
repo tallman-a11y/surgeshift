@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send } from 'lucide-react'
+import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react'
 import { scoreColor, scoreBg, scoreBorder, timeAgo, truncate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -30,6 +30,11 @@ export default function OpportunityCard({
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [replyText, setReplyText] = useState(opp.drafted_reply)
+  const [posting, setPosting] = useState(false)
+  const [postError, setPostError] = useState<string | null>(null)
+
+  const canAutoPost = opp.platform === 'reddit' || opp.platform === 'youtube'
+  const platformLabel = opp.platform === 'twitter' ? 'X/Twitter' : opp.platform
 
   async function handleCopy() {
     await navigator.clipboard.writeText(replyText)
@@ -37,7 +42,28 @@ export default function OpportunityCard({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const platformLabel = opp.platform === 'twitter' ? 'X/Twitter' : opp.platform
+  async function handlePostReply() {
+    if (!replyText.trim()) return
+    setPosting(true)
+    setPostError(null)
+    try {
+      const res = await fetch('/api/post-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: opp.id, replyText }),
+      })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (!res.ok || !data.ok) {
+        setPostError(data.error ?? 'Failed to post reply')
+      } else {
+        onStatusChange(opp.id, 'posted')
+      }
+    } catch {
+      setPostError('Network error — try again')
+    } finally {
+      setPosting(false)
+    }
+  }
 
   return (
     <div
@@ -47,7 +73,6 @@ export default function OpportunityCard({
       {/* Header */}
       <div className="p-4 pb-3">
         <div className="flex items-start gap-3">
-          {/* Score badge */}
           <div
             className="flex flex-col items-center justify-center w-12 h-12 rounded-xl shrink-0 text-center font-bold"
             style={{ background: scoreBg(opp.score), border: `1px solid ${scoreBorder(opp.score)}` }}
@@ -56,7 +81,6 @@ export default function OpportunityCard({
             <span className="text-[9px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>SCORE</span>
           </div>
 
-          {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className={cn('platform-badge', `platform-${opp.platform}`)}>{platformLabel}</span>
@@ -99,9 +123,13 @@ export default function OpportunityCard({
                 value={replyText}
                 onChange={e => setReplyText(e.target.value)}
                 rows={5}
+                title="Edit reply before posting"
                 className="text-xs leading-relaxed resize-none"
                 style={{ background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '0.8rem' }}
               />
+              {postError && (
+                <p className="text-xs mt-1.5 px-1" style={{ color: '#f87171' }}>{postError}</p>
+              )}
             </div>
           )}
         </div>
@@ -121,7 +149,7 @@ export default function OpportunityCard({
 
         {opp.drafted_reply && (
           <button type="button" onClick={handleCopy} className="btn-ghost text-xs py-1.5 px-3">
-            {copied ? <><CheckCheck size={12} style={{ color: 'var(--color-green)' }} /> Copied!</> : <><Copy size={12} /> Copy Reply</>}
+            {copied ? <><CheckCheck size={12} style={{ color: 'var(--color-green)' }} /> Copied!</> : <><Copy size={12} /> Copy</>}
           </button>
         )}
 
@@ -129,15 +157,28 @@ export default function OpportunityCard({
 
         {opp.status === 'pending' && (
           <>
-            <button
-              type="button"
-              onClick={() => onStatusChange(opp.id, 'posted')}
-              className="text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all"
-              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--color-green)', border: '1px solid rgba(34,197,94,0.25)' }}
-            >
-              <Send size={11} />
-              Mark Posted
-            </button>
+            {canAutoPost && opp.drafted_reply ? (
+              <button
+                type="button"
+                onClick={() => { setExpanded(true); handlePostReply() }}
+                disabled={posting}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all"
+                style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--color-green)', border: '1px solid rgba(34,197,94,0.25)' }}
+              >
+                {posting ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
+                {posting ? 'Posting…' : 'Post Reply'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onStatusChange(opp.id, 'posted')}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all"
+                style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--color-green)', border: '1px solid rgba(34,197,94,0.25)' }}
+              >
+                <Send size={11} />
+                Mark Posted
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onStatusChange(opp.id, 'dismissed')}
