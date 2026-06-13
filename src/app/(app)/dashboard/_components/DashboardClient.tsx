@@ -37,6 +37,7 @@ type DiagResult = {
   twitter: { count: number; error: string | null }
   existingOpportunities: number
   braveProbe?: { status: number; resultCount: number; postCount: number; error: string | null }
+  scoreTest?: { post: string; score: number; reason: string; error: string | null } | null
 } | null
 
 export default function DashboardClient({
@@ -131,6 +132,7 @@ export default function DashboardClient({
         <div className="flex items-center gap-3 flex-wrap">
           {brands.length > 1 && (
             <select
+              aria-label="Select brand"
               value={selectedBrandId}
               onChange={e => setSelectedBrandId(e.target.value)}
               style={{ width: 'auto', padding: '0.45rem 0.75rem' }}
@@ -151,6 +153,7 @@ export default function DashboardClient({
             {diagnosing ? <Loader2 size={14} className="animate-spin" /> : <Bug size={14} />}
           </button>
           <button
+            type="button"
             className="btn-accent"
             onClick={handleScan}
             disabled={scanning || !selectedBrandId}
@@ -238,6 +241,21 @@ export default function DashboardClient({
                 {diagResult.twitter.error && <div style={{ color: '#ef4444' }}>{diagResult.twitter.error}</div>}
               </div>
             </div>
+            {diagResult.scoreTest && (
+              <>
+                <div style={{ height: 1, background: 'var(--color-border)', margin: '4px 0' }} />
+                <div>
+                  <span className="font-medium" style={{ color: 'var(--color-text)' }}>Score test — </span>
+                  <span style={{ color: 'var(--color-text-muted)' }}>&quot;{diagResult.scoreTest.post}&quot;</span>
+                </div>
+                {diagResult.scoreTest.error
+                  ? <div style={{ color: '#ef4444' }}>Claude error: {diagResult.scoreTest.error}</div>
+                  : <div style={{ color: diagResult.scoreTest.score >= 30 ? 'var(--color-green)' : '#ef4444' }}>
+                      Score: {diagResult.scoreTest.score} — {diagResult.scoreTest.reason}
+                    </div>
+                }
+              </>
+            )}
             <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
               {diagResult.existingOpportunities} opportunities already in DB (already-seen posts are skipped)
             </div>
@@ -267,6 +285,7 @@ export default function DashboardClient({
         {(['pending', 'posted', 'dismissed', 'all'] as const).map(f => (
           <button
             key={f}
+            type="button"
             onClick={() => setFilter(f)}
             className="px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all"
             style={filter === f ? { background: 'var(--color-accent)', color: 'white' } : { color: 'var(--color-text-muted)' }}

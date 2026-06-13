@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { scanReddit } from '@/lib/scanner/reddit'
 import { scanYouTube } from '@/lib/scanner/youtube'
 import { scanTwitter } from '@/lib/scanner/twitter'
+import { scoreAndDraft } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -72,12 +73,31 @@ export async function POST(req: NextRequest) {
     scanTwitter(b.keywords),
   ])
 
+  // Test score: run the first Reddit post through Claude to see raw score output
+  type ScoreTest = { post: string; score: number; reason: string; error: string | null }
+  let scoreTest: ScoreTest | null = null
+  if (redditPosts.status === 'fulfilled' && redditPosts.value.length > 0) {
+    const testPost = redditPosts.value[0]
+    try {
+      const result = await scoreAndDraft(brand as Parameters<typeof scoreAndDraft>[0], {
+        title: testPost.title,
+        body: testPost.body,
+        platform: 'reddit',
+        subreddit: testPost.subreddit,
+      })
+      scoreTest = { post: testPost.title.slice(0, 80), score: result.score, reason: result.reason, error: null }
+    } catch (e) {
+      scoreTest = { post: testPost.title.slice(0, 80), score: -1, reason: '', error: String(e) }
+    }
+  }
+
   return NextResponse.json({
     env: envCheck,
     braveProbe,
     existingOpportunities: existingCount,
     keywords: b.keywords.slice(0, 5),
     subreddits: b.subreddits.slice(0, 4),
+    scoreTest,
     reddit: {
       count: redditPosts.status === 'fulfilled' ? redditPosts.value.length : 0,
       error: redditPosts.status === 'rejected' ? String(redditPosts.reason) : null,
