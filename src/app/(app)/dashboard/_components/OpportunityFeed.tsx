@@ -38,8 +38,8 @@ export default function OpportunityFeed({
       .from('opportunities')
       .select('*')
       .in('brand_id', brandIds)
-      .order('score', { ascending: false })
       .order('found_at', { ascending: false })
+      .order('score', { ascending: false })
       .limit(50)
 
     if (filter !== 'all') {
