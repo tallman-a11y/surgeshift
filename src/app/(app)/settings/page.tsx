@@ -12,8 +12,8 @@ export default async function SettingsPage() {
   const integrations = [
     {
       name: 'Reddit',
-      description: 'Google Custom Search (site:reddit.com) — GOOGLE_API_KEY + GOOGLE_CSE_ID',
-      active: !!(process.env.GOOGLE_API_KEY && process.env.GOOGLE_CSE_ID),
+      description: 'Brave Search API (site:reddit.com) — BRAVE_API_KEY',
+      active: !!process.env.BRAVE_API_KEY,
     },
     {
       name: 'YouTube',
