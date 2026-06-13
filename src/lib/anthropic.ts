@@ -49,6 +49,7 @@ TASK:
    - Includes the URL: ${brand.url}
    - Sounds like a knowledgeable community member, not a marketer
    - Is NOT generic — reference specifics from their post
+   - ONLY mention the specific ${brand.name} feature(s) that solve their actual problem. Never bring up unrelated modules. If they asked about defects → mention Field Oracle. If they asked about codes → mention Code Navigator. If they asked about WPS → mention WPS Builder. If they asked about settings → mention Weld Advisor. If they asked about certification exams → mention exam prep. Do NOT mention CWI/certifications unless the post is about certifications.
    If score < 35, drafted_reply should be empty string.
 
 Respond ONLY in this JSON format (no markdown, no code block):
