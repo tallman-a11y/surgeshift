@@ -12,13 +12,14 @@ export type RawPost = {
   author: string
   platform: string
   subreddit?: string
+  publishedAt?: string
 }
 
 function redditToRaw(p: RedditPost): RawPost {
   return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'reddit', subreddit: p.subreddit }
 }
 function youtubeToRaw(p: YouTubeResult): RawPost {
-  return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'youtube' }
+  return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'youtube', publishedAt: p.publishedAt }
 }
 function twitterToRaw(p: TwitterResult): RawPost {
   return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'twitter' }
@@ -50,14 +51,16 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
     scanTwitter(brand.keywords),
   ])
 
+  const ageCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
+
   const allPosts: RawPost[] = [
     ...redditPosts.map(redditToRaw),
     ...youtubePosts.map(youtubeToRaw),
     ...twitterPosts.map(twitterToRaw),
   ]
     .filter(p => !existingIds.has(p.id))
-    // Drop posts with no meaningful text — image-only posts etc.
     .filter(p => (p.title + p.body).trim().length > 30)
+    .filter(p => !p.publishedAt || new Date(p.publishedAt).getTime() > ageCutoff)
 
   let newCount = 0
 

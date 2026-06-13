@@ -5,6 +5,7 @@ export type YouTubeResult = {
   url: string
   author: string
   platform: 'youtube'
+  publishedAt?: string
 }
 
 function isEnglish(text: string): boolean {
@@ -20,10 +21,12 @@ export async function scanYouTube(keywords: string[]): Promise<YouTubeResult[]> 
   const results: YouTubeResult[] = []
   const seen = new Set<string>()
 
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+
   for (const keyword of keywords.slice(0, 8)) {
     try {
       const searchRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&order=relevance&maxResults=15&relevanceLanguage=en&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&order=relevance&maxResults=15&relevanceLanguage=en&publishedAfter=${encodeURIComponent(ninetyDaysAgo)}&key=${apiKey}`
       )
       if (!searchRes.ok) {
         console.warn(`[youtube] Search failed ${searchRes.status} for "${keyword}"`)
@@ -60,6 +63,7 @@ export async function scanYouTube(keywords: string[]): Promise<YouTubeResult[]> 
               url: `https://www.youtube.com/watch?v=${videoId}`,
               author: item.snippet.channelTitle,
               platform: 'youtube',
+              publishedAt: item.snippet.publishedAt,
             })
           }
         }
