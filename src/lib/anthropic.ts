@@ -61,9 +61,12 @@ Respond ONLY in this JSON format (no markdown, no code block):
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const text = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+  const raw = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+  // Strip markdown code fences if present, then extract the JSON object
+  const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  const jsonMatch = stripped.match(/\{[\s\S]*\}/)
   try {
-    return JSON.parse(text) as ScoredOpportunity
+    return JSON.parse(jsonMatch ? jsonMatch[0] : stripped) as ScoredOpportunity
   } catch {
     return { score: 0, reason: 'Parse error', drafted_reply: '' }
   }
