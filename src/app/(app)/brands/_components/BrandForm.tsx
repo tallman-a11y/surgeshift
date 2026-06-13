@@ -14,6 +14,7 @@ type Brand = {
   keywords: string[]
   subreddits: string[]
   voice_notes: string
+  disclosure_line: string
   active: boolean
 }
 
@@ -26,6 +27,7 @@ export default function BrandForm({ brand }: { brand?: Brand }) {
   const [keywords, setKeywords] = useState<string[]>(brand?.keywords ?? [])
   const [subreddits, setSubreddits] = useState<string[]>(brand?.subreddits ?? [])
   const [voiceNotes, setVoiceNotes] = useState(brand?.voice_notes ?? '')
+  const [disclosureLine, setDisclosureLine] = useState(brand?.disclosure_line ?? '')
   const [active, setActive] = useState(brand?.active ?? true)
   const [kwInput, setKwInput] = useState('')
   const [subInput, setSubInput] = useState('')
@@ -52,7 +54,7 @@ export default function BrandForm({ brand }: { brand?: Brand }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setError('Not authenticated'); setSaving(false); return }
 
-    const payload = { name, tagline, description, url, keywords, subreddits, voice_notes: voiceNotes, active, user_id: user.id }
+    const payload = { name, tagline, description, url, keywords, subreddits, voice_notes: voiceNotes, disclosure_line: disclosureLine, active, user_id: user.id }
 
     if (brand) {
       const { error: err } = await supabase.from('brands').update(payload).eq('id', brand.id)
@@ -163,6 +165,18 @@ export default function BrandForm({ brand }: { brand?: Brand }) {
           onChange={e => setVoiceNotes(e.target.value)}
           rows={2}
           placeholder="e.g. 'Knowledgeable welding professional, casual but authoritative. Mention practice tests naturally.'"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Disclosure Line (optional)</label>
+        <p className="text-xs mb-2" style={{ color: 'var(--color-text-dim)' }}>
+          Appended to every drafted reply for transparency. Recommended per Reddit&apos;s Responsible Builder Policy.
+        </p>
+        <input
+          value={disclosureLine}
+          onChange={e => setDisclosureLine(e.target.value)}
+          placeholder="e.g. (I built this tool) or (Disclaimer: I'm affiliated with WeldShift Academy)"
         />
       </div>
 
