@@ -36,18 +36,20 @@ Body: ${post.body}
 
 TASK:
 1. Score this post 0-100 for how relevant it is as a marketing opportunity for ${brand.name}.
-   - 90-100: Person is actively looking for exactly what ${brand.name} offers
-   - 70-89: Strong match — they need this kind of tool
-   - 50-69: Moderate match — adjacent need, worth a reply
-   - Below 50: Poor match, not worth engaging
+   Score GENEROUSLY — our goal is to find any thread where a community member mentioning ${brand.name} would add genuine value:
+   - 80-100: Person is directly asking for something ${brand.name} does (exam prep, tools, study resources, weld inspection help, certifications)
+   - 60-79: Strong match — they're discussing a problem or topic ${brand.name} solves
+   - 40-59: Moderate match — the topic overlaps with ${brand.name}'s world, a mention would be welcome
+   - 25-39: Weak but possible — tangentially related, only reply if very natural
+   - Below 25: No real connection, skip
 2. Write a 2-3 sentence reason for the score.
-3. If score >= 55, write a natural, human-sounding reply that:
+3. If score >= 35, write a natural, human-sounding reply that:
    - Genuinely addresses their question or need first
    - Mentions ${brand.name} organically (not as an ad)
    - Includes the URL: ${brand.url}
    - Sounds like a knowledgeable community member, not a marketer
    - Is NOT generic — reference specifics from their post
-   If score < 55, drafted_reply should be empty string.
+   If score < 35, drafted_reply should be empty string.
 
 Respond ONLY in this JSON format (no markdown, no code block):
 {"score":85,"reason":"User is asking exactly for CWI exam prep resources — direct match.","drafted_reply":"For CWI Part B, the visual exam is what trips most people up..."}

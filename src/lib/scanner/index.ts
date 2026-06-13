@@ -60,11 +60,11 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
 
   let newCount = 0
 
-  // Score each post and save opportunities with score >= 40
+  // Score each post and save opportunities with score >= 30
   for (const post of allPosts) {
     try {
       const scored = await scoreAndDraft(brand, post)
-      if (scored.score < 40) continue
+      if (scored.score < 30) continue
 
       await supabase.from('opportunities').insert({
         brand_id: brand.id,
