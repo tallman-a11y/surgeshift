@@ -33,23 +33,32 @@ export default function DashboardClient({
   lastScan: LastScan
 }) {
   const [scanning, startScan] = useTransition()
-  const [scanResult, setScanResult] = useState<{ new_count: number; total_scanned: number } | null>(null)
+  const [scanResult, setScanResult] = useState<{ new_count: number; total_scanned: number; platforms?: { reddit: number; youtube: number; twitter: number } } | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
   const [selectedBrandId, setSelectedBrandId] = useState<string>(brands[0]?.id ?? '')
   const [filter, setFilter] = useState<'all' | 'pending' | 'posted' | 'dismissed'>('pending')
 
   async function handleScan() {
     if (!selectedBrandId) return
     setScanResult(null)
+    setScanError(null)
     startScan(async () => {
-      const res = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId: selectedBrandId }),
-      })
-      if (res.ok) {
-        const data = await res.json() as { new_count: number; total_scanned: number }
-        setScanResult(data)
-        window.location.reload()
+      try {
+        const res = await fetch('/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId: selectedBrandId }),
+        })
+        if (res.ok) {
+          const data = await res.json() as { new_count: number; total_scanned: number; platforms?: { reddit: number; youtube: number; twitter: number } }
+          setScanResult(data)
+          window.location.reload()
+        } else {
+          const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string }
+          setScanError(err.error ?? `Scan failed (HTTP ${res.status})`)
+        }
+      } catch (e) {
+        setScanError(e instanceof Error ? e.message : 'Scan failed — check your connection')
       }
     })
   }
@@ -111,7 +120,22 @@ export default function DashboardClient({
       {scanResult && (
         <div className="mb-5 px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-medium" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: 'var(--color-green)' }}>
           <CheckCircle2 size={16} />
-          Scan complete — {scanResult.new_count} new opportunities found from {scanResult.total_scanned} posts scanned
+          <span>
+            Scan complete — {scanResult.new_count} new opportunities from {scanResult.total_scanned} posts
+            {scanResult.platforms && (
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                {' '}(Reddit {scanResult.platforms.reddit} · YouTube {scanResult.platforms.youtube} · X {scanResult.platforms.twitter})
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Scan error banner */}
+      {scanError && (
+        <div className="mb-5 px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-medium" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}>
+          <ScanSearch size={16} />
+          Scan failed: {scanError}
         </div>
       )}
 

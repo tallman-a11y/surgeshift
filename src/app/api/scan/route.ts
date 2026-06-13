@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { runScan } from '@/lib/scanner'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()

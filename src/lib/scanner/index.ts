@@ -29,6 +29,7 @@ export type ScanResult = {
   platform: string
   new_count: number
   total_scanned: number
+  platforms: { reddit: number; youtube: number; twitter: number }
 }
 
 export async function runScan(brand: Brand & { keywords: string[]; subreddits: string[] }, userId: string): Promise<ScanResult[]> {
@@ -60,29 +61,40 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
 
   let newCount = 0
 
-  // Score each post and save opportunities with score >= 30
-  for (const post of allPosts) {
-    try {
-      const scored = await scoreAndDraft(brand, post)
-      if (scored.score < 30) continue
+  // Cap posts scored per scan to stay within Vercel function timeout
+  const postsToScore = allPosts.slice(0, 25)
 
-      await supabase.from('opportunities').insert({
-        brand_id: brand.id,
-        platform: post.platform,
-        thread_url: post.url,
-        thread_id: post.id,
-        title: post.title,
-        body: post.body.slice(0, 2000),
-        author: post.author,
-        subreddit: post.subreddit ?? null,
-        score: scored.score,
-        score_reason: scored.reason,
-        drafted_reply: scored.drafted_reply,
-        status: 'pending',
-      })
-      newCount++
-    } catch { /* skip individual failures */ }
-  }
+  // Score all posts in parallel
+  const scored = await Promise.all(
+    postsToScore.map(post =>
+      scoreAndDraft(brand, post).catch(() => null)
+    )
+  )
+
+  // Save opportunities with score >= 30
+  await Promise.all(
+    postsToScore.map(async (post, i) => {
+      const result = scored[i]
+      if (!result || result.score < 30) return
+      try {
+        await supabase.from('opportunities').insert({
+          brand_id: brand.id,
+          platform: post.platform,
+          thread_url: post.url,
+          thread_id: post.id,
+          title: post.title,
+          body: post.body.slice(0, 2000),
+          author: post.author,
+          subreddit: post.subreddit ?? null,
+          score: result.score,
+          score_reason: result.reason,
+          drafted_reply: result.drafted_reply,
+          status: 'pending',
+        })
+        newCount++
+      } catch { /* skip individual insert failures */ }
+    })
+  )
 
   // Log the scan run
   await supabase.from('scan_runs').insert({
@@ -97,6 +109,11 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
     platform: 'all',
     new_count: newCount,
     total_scanned: allPosts.length,
+    platforms: {
+      reddit: redditPosts.length,
+      youtube: youtubePosts.length,
+      twitter: twitterPosts.length,
+    },
   })
 
   return results
