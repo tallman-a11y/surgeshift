@@ -42,7 +42,7 @@ export async function scanReddit(keywords: string[], subreddits: string[]): Prom
 
   for (const query of queries.slice(0, 10)) {
     try {
-      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=10&freshness=pm`
+      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=10`
       const res = await fetch(url, {
         headers: {
           'Accept': 'application/json',

@@ -51,8 +51,6 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
     scanTwitter(brand.keywords),
   ])
 
-  const ageCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
-
   const allPosts: RawPost[] = [
     ...redditPosts.map(redditToRaw),
     ...youtubePosts.map(youtubeToRaw),
@@ -60,7 +58,6 @@ export async function runScan(brand: Brand & { keywords: string[]; subreddits: s
   ]
     .filter(p => !existingIds.has(p.id))
     .filter(p => (p.title + p.body).trim().length > 30)
-    .filter(p => !p.publishedAt || new Date(p.publishedAt).getTime() > ageCutoff)
 
   let newCount = 0
 
