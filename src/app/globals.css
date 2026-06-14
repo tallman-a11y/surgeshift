@@ -91,6 +91,65 @@ html, body {
 
 .glow-accent { box-shadow: 0 0 20px rgba(99,102,241,0.2); }
 
+/* ── Landing page: Shift family design system ── */
+.land-glass {
+  background: rgba(192,38,211,0.04);
+  border: 1px solid rgba(232,121,249,0.12);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.land-glass-cyan {
+  background: rgba(34,211,238,0.04);
+  border: 1px solid rgba(34,211,238,0.12);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.land-gradient-text {
+  background: linear-gradient(135deg, #22d3ee 0%, #a855f7 50%, #e879f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.land-gradient-btn {
+  background: linear-gradient(135deg, #c026d3, #22d3ee);
+}
+.land-glow {
+  box-shadow: 0 0 60px rgba(192,38,211,0.2), 0 0 120px rgba(192,38,211,0.06);
+}
+.land-glow-sm {
+  box-shadow: 0 0 24px rgba(192,38,211,0.18);
+}
+.land-dot-grid {
+  background-image: radial-gradient(circle, rgba(168,85,247,0.10) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.land-orb {
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: land-orb-float 9s ease-in-out infinite;
+  pointer-events: none;
+}
+.land-orb-2 { animation-delay: -3.5s; }
+.land-orb-3 { animation-delay: -6s; }
+@keyframes land-orb-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%       { transform: translateY(-30px) scale(1.05); }
+}
+.land-hero-ambient {
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -5%,  rgba(192,38,211,0.13) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 40%,  rgba(34,211,238,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 45% at 10% 50%,  rgba(168,85,247,0.09) 0%, transparent 55%);
+}
+.land-nav-inner {
+  height: 80px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+.land-pill-eyebrow { padding: 0.45rem 1.1rem; }
+.land-pill-trust   { padding: 0.4rem 0.9rem; }
+
 input, textarea, select {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
