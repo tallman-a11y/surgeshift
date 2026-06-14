@@ -120,7 +120,7 @@ export default function LandingPage() {
 
           {/* Center: logo */}
           <a href="#" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', textDecoration: 'none' }}>
-            <img src="/surgeshift.svg" alt="SurgeShift AI" width={48} height={48} style={{ flexShrink: 0 }} />
+            <img src="/surgeshift-cropped.png" alt="SurgeShift AI" width={48} height={48} style={{ flexShrink: 0, borderRadius: '0.625rem' }} />
             <span className="land-gradient-text hidden md:block" style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.01em' }}>SurgeShift AI</span>
           </a>
 
@@ -375,7 +375,7 @@ export default function LandingPage() {
       <footer style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.04)', padding: '2rem 1.5rem' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-            <img src="/surgeshift.svg" alt="SurgeShift AI" width={34} height={34} style={{ flexShrink: 0, opacity: 0.85 }} />
+            <img src="/surgeshift-cropped.png" alt="SurgeShift AI" width={34} height={34} style={{ flexShrink: 0, opacity: 0.85, borderRadius: '0.45rem' }} />
             <span className="land-gradient-text" style={{ fontSize: '0.9rem', fontWeight: 800 }}>SurgeShift AI</span>
           </div>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
