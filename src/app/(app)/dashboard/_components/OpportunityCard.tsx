@@ -25,7 +25,7 @@ export default function OpportunityCard({
   onStatusChange,
 }: {
   opp: Opportunity
-  onStatusChange: (id: string, status: string) => void
+  onStatusChange: (id: string, status: string, dbAlreadyUpdated?: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -56,7 +56,7 @@ export default function OpportunityCard({
       if (!res.ok || !data.ok) {
         setPostError(data.error ?? 'Failed to post reply')
       } else {
-        onStatusChange(opp.id, 'posted')
+        onStatusChange(opp.id, 'posted', true)
       }
     } catch {
       setPostError('Network error — try again')
@@ -127,11 +127,15 @@ export default function OpportunityCard({
                 className="text-xs leading-relaxed resize-none"
                 style={{ background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '0.8rem' }}
               />
-              {postError && (
-                <p className="text-xs mt-1.5 px-1" style={{ color: '#f87171' }}>{postError}</p>
-              )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Post error — always visible, not buried inside the collapsed draft section */}
+      {postError && (
+        <div className="mx-4 mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+          {postError}
         </div>
       )}
 

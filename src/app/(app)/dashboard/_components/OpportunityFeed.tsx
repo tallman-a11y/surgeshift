@@ -53,13 +53,19 @@ export default function OpportunityFeed({
 
   useEffect(() => { load() }, [load])
 
-  async function updateStatus(id: string, status: string) {
+  async function updateStatus(id: string, status: string, dbAlreadyUpdated = false) {
+    if (dbAlreadyUpdated) {
+      setOpps(prev => prev.filter(o => o.id !== id))
+      return
+    }
     const supabase = createClient()
-    await supabase.from('opportunities').update({
+    const { error } = await supabase.from('opportunities').update({
       status,
       ...(status === 'posted' ? { posted_at: new Date().toISOString() } : {}),
     }).eq('id', id)
-    setOpps(prev => prev.filter(o => o.id !== id))
+    if (!error) {
+      setOpps(prev => prev.filter(o => o.id !== id))
+    }
   }
 
   if (loading) {
@@ -84,7 +90,7 @@ export default function OpportunityFeed({
   return (
     <div className="flex flex-col gap-4">
       {opps.map(opp => (
-        <OpportunityCard key={opp.id} opp={opp} onStatusChange={updateStatus} />
+        <OpportunityCard key={opp.id} opp={opp} onStatusChange={(id, status, dbAlreadyUpdated) => updateStatus(id, status, dbAlreadyUpdated)} />
       ))}
     </div>
   )
