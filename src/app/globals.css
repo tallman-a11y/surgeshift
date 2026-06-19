@@ -166,3 +166,68 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
 }
 input::placeholder, textarea::placeholder { color: var(--color-text-dim); }
+
+/* ── Shift Intelligence UI ── */
+
+/* Conversation prose rendering */
+.shift-prose { line-height: 1.65; }
+.shift-prose p, .shift-p { margin: 0.5em 0; }
+.shift-prose strong { font-weight: 600; color: var(--color-text); }
+.shift-h1 { font-size: 1.1rem; font-weight: 700; color: var(--color-text); margin: 0.75em 0 0.4em; }
+.shift-h2 { font-size: 1rem; font-weight: 600; color: var(--color-text); margin: 0.65em 0 0.35em; }
+.shift-h3 { font-size: 0.9rem; font-weight: 600; color: var(--color-text-muted); margin: 0.55em 0 0.3em; letter-spacing: 0.01em; }
+.shift-code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8em;
+  padding: 0.15em 0.45em;
+  border-radius: 0.3rem;
+  background: rgba(99,102,241,0.1);
+  color: var(--color-accent);
+  border: 1px solid rgba(99,102,241,0.15);
+}
+.shift-li {
+  padding-left: 1.2em;
+  position: relative;
+  margin: 0.25em 0;
+  color: var(--color-text);
+}
+.shift-li::before {
+  content: '·';
+  position: absolute;
+  left: 0.4em;
+  color: var(--color-accent);
+  font-weight: bold;
+}
+
+/* Shift bar glass effect */
+.shift-glass {
+  background: rgba(8,8,14,0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(99,102,241,0.12);
+}
+
+/* Scrollbar hide utility */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Animated scan state ring */
+@keyframes shift-scan-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(34,211,238,0.4); }
+  70%  { box-shadow: 0 0 0 6px rgba(34,211,238,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,211,238,0); }
+}
+.shift-scanning { animation: shift-scan-ring 1.4s ease-out infinite; }
+
+/* Generated content pre block */
+.shift-content-pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-muted);
+}
