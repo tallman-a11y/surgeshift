@@ -3,9 +3,21 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { runScan } from '@/lib/scanner'
 import { scoreAndDraft } from '@/lib/anthropic'
+import {
+  VoyageEmbeddingProvider,
+  retrieveRelevantMemories,
+  recordMemory,
+  formatMemoriesForPrompt,
+} from '@allshift/core'
+import { SupabaseMemoryStore } from '@/lib/supabase-memory-store'
+import { createServiceClient } from '@/lib/supabase/service'
+import { surgeShiftPersona } from '@/lib/shift-brain'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
+
+const embedding = new VoyageEmbeddingProvider(process.env.VOYAGE_API_KEY)
+const memoryStore = new SupabaseMemoryStore(createServiceClient())
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -522,7 +534,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const systemPrompt = buildSystemPrompt(brandList, pendingCounts)
+  const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
+  const memories = await retrieveRelevantMemories(memoryStore, embedding, {
+    userId: user.id,
+    query: lastUserMessage || 'marketing overview',
+    limit: 10,
+    threshold: 0.25,
+  })
+  const memoryBlock = formatMemoriesForPrompt(memories, surgeShiftPersona.domain)
+  const systemPrompt = buildSystemPrompt(brandList, pendingCounts) + (memoryBlock ? `\n\n${memoryBlock}` : '')
 
   // Convert client messages to Anthropic format
   const claudeMessages: Anthropic.MessageParam[] = messages.map(m => ({
@@ -598,6 +618,25 @@ export async function POST(req: NextRequest) {
           }
 
           claudeMessages.push({ role: 'user', content: toolResults })
+        }
+
+        // Collect final assistant text from the last turn for memory
+        const lastTurn = claudeMessages.at(-1)
+        if (lastTurn && lastUserMessage) {
+          const assistantText = Array.isArray(lastTurn.content)
+            ? (lastTurn.content as Array<{ type: string; text?: string }>)
+                .filter(b => b.type === 'text').map(b => b.text ?? '').join('')
+            : (typeof lastTurn.content === 'string' ? lastTurn.content : '')
+          if (assistantText) {
+            void recordMemory(memoryStore, embedding, {
+              userId: user.id,
+              content: `User: ${lastUserMessage.slice(0, 300)}\nShift: ${assistantText.slice(0, 500)}`,
+              type: 'context',
+              source: 'conversation',
+              confidence: 0.6,
+              salience: 0.4,
+            })
+          }
         }
 
         send({ type: 'done' })
