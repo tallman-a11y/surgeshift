@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@shift/ui/styles.css";
+@import "@allshift/ui/styles.css";
 
 /* ── @shift/ui token mapping — SurgeShift signature → shared contract ──────
    Indigo primary (#6366f1) + cyan (#22d3ee) drives all @shift/* primitives. */
