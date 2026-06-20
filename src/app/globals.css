@@ -1,4 +1,17 @@
 @import "tailwindcss";
+@import "@shift/ui/styles.css";
+
+/* ── @shift/ui token mapping — SurgeShift signature → shared contract ──────
+   Indigo primary (#6366f1) + cyan (#22d3ee) drives all @shift/* primitives. */
+:root {
+  --shift-accent:    #6366f1;
+  --shift-accent-2:  #22d3ee;
+  --shift-surface:   rgba(15, 15, 26, 0.92);
+  --shift-surface-2: rgba(8, 8, 14, 0.94);
+  --shift-border:    rgba(30, 30, 48, 0.80);
+  --shift-shadow:    rgba(0, 0, 0, 0.70);
+  --shift-highlight: rgba(255, 255, 255, 0.06);
+}
 
 @theme {
   --color-background: #08080e;
