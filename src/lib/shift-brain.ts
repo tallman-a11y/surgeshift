@@ -6,9 +6,12 @@ import {
   type EmbeddingProvider,
   type MemoryStore,
   type GenomeStore,
+  type LearningStore,
 } from "@allshift/core";
 import { createServiceClient } from "@/lib/supabase/service";
 import { SupabaseMemoryStore } from "@/lib/supabase-memory-store";
+import { SupabaseLearningStore } from "@/lib/supabase-learning-store";
+import { SupabaseGenomeStore } from "@/lib/supabase-genome-store";
 
 export const surgeShiftPersona = definePersona({
   name: "Shift",
@@ -25,9 +28,20 @@ Be direct, confident, and data-driven. Lead with the most important opportunity.
 });
 
 function build(): ShiftBrain {
-  const supabase = createServiceClient();
-  const memory: MemoryStore = new SupabaseMemoryStore(supabase);
-  const genome: GenomeStore = new NoOpGenomeStore();
+  const hasSupabase = !!(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const supabase = hasSupabase ? createServiceClient() : null;
+  const memory: MemoryStore | undefined = supabase
+    ? new SupabaseMemoryStore(supabase)
+    : undefined;
+  const learning: LearningStore | undefined = supabase
+    ? new SupabaseLearningStore(supabase)
+    : undefined;
+  const genome: GenomeStore = supabase
+    ? new SupabaseGenomeStore(supabase)
+    : new NoOpGenomeStore();
   const embedding: EmbeddingProvider = new VoyageEmbeddingProvider(
     process.env.VOYAGE_API_KEY
   );
@@ -36,6 +50,7 @@ function build(): ShiftBrain {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
     embedding,
     memory,
+    learning,
     genome,
     product: "surgeshift",
     maxTokens: 1024,
