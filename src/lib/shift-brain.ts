@@ -1,9 +1,11 @@
 import {
   ShiftBrain,
   VoyageEmbeddingProvider,
+  NoOpGenomeStore,
   definePersona,
   type EmbeddingProvider,
   type MemoryStore,
+  type GenomeStore,
 } from "@allshift/core";
 import { createServiceClient } from "@/lib/supabase/service";
 import { SupabaseMemoryStore } from "@/lib/supabase-memory-store";
@@ -25,6 +27,7 @@ Be direct, confident, and data-driven. Lead with the most important opportunity.
 function build(): ShiftBrain {
   const supabase = createServiceClient();
   const memory: MemoryStore = new SupabaseMemoryStore(supabase);
+  const genome: GenomeStore = new NoOpGenomeStore();
   const embedding: EmbeddingProvider = new VoyageEmbeddingProvider(
     process.env.VOYAGE_API_KEY
   );
@@ -33,6 +36,8 @@ function build(): ShiftBrain {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
     embedding,
     memory,
+    genome,
+    product: "surgeshift",
     maxTokens: 1024,
   });
 }
