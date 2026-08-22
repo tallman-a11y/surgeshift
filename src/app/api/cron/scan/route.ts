@@ -1,49 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { runScan } from '@/lib/scanner'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+// Vercel cron hits this with no user session, so the cookie-based client sees
+// nothing under RLS (brands → [] → "No active brands", forever). Use the
+// service-role client for the whole run: reading brands, de-duping, inserting
+// opportunities and logging scan_runs.
 export async function GET(req: NextRequest) {
-  // Verify cron secret
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
-  // Get all active brands
-  const { data: brands } = await supabase
+  const { data: brands, error } = await supabase
     .from('brands')
     .select('*')
     .eq('active', true)
 
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!brands || brands.length === 0) {
     return NextResponse.json({ message: 'No active brands' })
   }
 
-  // Get user IDs for each brand
+  type BrandRow = {
+    id: string
+    name: string
+    tagline: string
+    description: string
+    url: string
+    voice_notes?: string
+    keywords: string[]
+    subreddits: string[]
+    user_id: string
+  }
+
   const results = []
-  for (const brand of brands) {
+  for (const brand of brands as BrandRow[]) {
     try {
-      type BrandRow = {
-        id: string
-        name: string
-        tagline: string
-        description: string
-        url: string
-        voice_notes?: string
-        keywords: string[]
-        subreddits: string[]
-        user_id: string
-      }
-      const b = brand as BrandRow
-      const scanResults = await runScan(b, b.user_id)
-      results.push({ brand: b.name, ...scanResults[0] })
+      const scanResults = await runScan(brand, brand.user_id, supabase)
+      results.push({ brand: brand.name, ...scanResults[0] })
     } catch (err) {
-      results.push({ brand: (brand as { name: string }).name, error: String(err) })
+      results.push({ brand: brand.name, error: String(err) })
     }
   }
 

@@ -2,6 +2,7 @@ import { scanReddit, type RedditPost } from './reddit'
 import { scanYouTube, type YouTubeResult } from './youtube'
 import { scanTwitter, type TwitterResult } from './twitter'
 import { scoreAndDraft, type Brand } from '../anthropic'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '../supabase/server'
 
 export type RawPost = {
@@ -33,8 +34,13 @@ export type ScanResult = {
   platforms: { reddit: number; youtube: number; twitter: number }
 }
 
-export async function runScan(brand: Brand & { keywords: string[]; subreddits: string[] }, userId: string): Promise<ScanResult[]> {
-  const supabase = await createClient()
+export async function runScan(
+  brand: Brand & { keywords: string[]; subreddits: string[] },
+  userId: string,
+  client?: SupabaseClient,
+): Promise<ScanResult[]> {
+  // Dashboard scans use the caller's session (RLS); the cron passes the service client.
+  const supabase = client ?? await createClient()
   const results: ScanResult[] = []
 
   // Gather existing thread IDs to avoid re-processing
