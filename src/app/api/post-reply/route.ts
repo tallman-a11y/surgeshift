@@ -1,68 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-
-type PlatformConnection = {
-  id: string
-  platform: string
-  access_token: string
-  refresh_token: string | null
-  expires_at: string | null
-  username: string | null
-}
+import { getValidToken, TokenRefreshError, type PlatformConnection } from '@/lib/platform-tokens'
 
 type Opportunity = {
   id: string
   platform: string
   thread_url: string
   drafted_reply: string
-}
-
-async function refreshRedditToken(conn: PlatformConnection): Promise<string> {
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${Buffer.from(`${process.env.REDDIT_CLIENT_ID}:${process.env.REDDIT_CLIENT_SECRET}`).toString('base64')}`,
-      'User-Agent': 'SurgeShift/1.0',
-    },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: conn.refresh_token! }),
-  })
-  type RedditTokenResponse = { access_token: string; expires_in: number }
-  const data = await res.json() as RedditTokenResponse
-  return data.access_token
-}
-
-async function refreshYouTubeToken(conn: PlatformConnection): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: conn.refresh_token!,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-  })
-  type GoogleTokenResponse = { access_token: string }
-  const data = await res.json() as GoogleTokenResponse
-  return data.access_token
-}
-
-async function getValidToken(supabase: Awaited<ReturnType<typeof createClient>>, conn: PlatformConnection): Promise<string> {
-  const expired = conn.expires_at && new Date(conn.expires_at).getTime() < Date.now() + 60_000
-  if (!expired) return conn.access_token
-
-  const newToken = conn.platform === 'reddit'
-    ? await refreshRedditToken(conn)
-    : await refreshYouTubeToken(conn)
-
-  await supabase.from('platform_connections').update({
-    access_token: newToken,
-    expires_at: new Date(Date.now() + 3600_000).toISOString(),
-    updated_at: new Date().toISOString(),
-  }).eq('id', conn.id)
-
-  return newToken
 }
 
 function extractRedditPostId(url: string): string | null {
@@ -147,7 +91,15 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
-  const token = await getValidToken(supabase, conn as PlatformConnection)
+  // A dead refresh token used to fall through here as "Bearer undefined" and surface
+  // as a cryptic 401 from the platform. Now it is a clear "reconnect" message.
+  let token: string
+  try {
+    token = await getValidToken(supabase, conn as PlatformConnection)
+  } catch (err) {
+    const message = err instanceof TokenRefreshError ? err.message : 'Could not refresh the platform token.'
+    return NextResponse.json({ error: message }, { status: 502 })
+  }
   let result: { ok: boolean; error?: string }
 
   if (opportunity.platform === 'reddit') {

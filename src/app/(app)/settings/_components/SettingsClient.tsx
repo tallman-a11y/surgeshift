@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { User, Key, Zap, CheckCircle, XCircle, Link2, Link2Off, PlayCircle } from 'lucide-react'
+import { User, Key, Zap, CheckCircle, XCircle, Link2, Link2Off, PlayCircle, RefreshCw, AlertTriangle } from 'lucide-react'
 
 type Integration = { name: string; description: string; active: boolean }
+type Banner = { type: 'success' | 'error'; msg: string } | null
+// Absent = still verifying; present = the platform answered.
+type Health = { state: 'live' } | { state: 'dead'; error: string }
 
 type Props = {
   email: string
@@ -16,32 +19,57 @@ type Props = {
   youtubeUsername: string | null
 }
 
+// Derived once from the OAuth redirect params; the effect below only cleans the URL.
+function bannerFromParams(params: { get(name: string): string | null }): Banner {
+  const connected = params.get('connected')
+  const error = params.get('error')
+  if (connected === 'reddit') return { type: 'success', msg: 'Reddit connected successfully.' }
+  if (connected === 'youtube') return { type: 'success', msg: 'YouTube connected successfully.' }
+  if (error === 'reddit_denied') return { type: 'error', msg: 'Reddit authorization was denied.' }
+  if (error === 'youtube_denied') return { type: 'error', msg: 'YouTube authorization was denied.' }
+  if (error === 'reddit_state' || error === 'youtube_state') return { type: 'error', msg: 'OAuth state mismatch — try again.' }
+  if (error === 'reddit_token') return { type: 'error', msg: 'Failed to get Reddit token — check your app credentials.' }
+  if (error === 'youtube_token') return { type: 'error', msg: 'Failed to get YouTube token — check your app credentials.' }
+  return null
+}
+
 export default function SettingsClient({
   email, userId, integrations, redditConnected, youtubeConnected, redditUsername, youtubeUsername,
 }: Props) {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [banner, setBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const [banner, setBanner] = useState<Banner>(() => bannerFromParams(searchParams))
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
+  // A stored token only proves we connected once. Verify each connected platform on
+  // load by forcing a refresh — the one call that proves the grant is still alive.
+  const [health, setHealth] = useState<Record<string, Health>>({})
 
   useEffect(() => {
-    const connected = searchParams.get('connected')
-    const error = searchParams.get('error')
-    if (connected === 'reddit') setBanner({ type: 'success', msg: 'Reddit connected successfully.' })
-    else if (connected === 'youtube') setBanner({ type: 'success', msg: 'YouTube connected successfully.' })
-    else if (error === 'reddit_denied') setBanner({ type: 'error', msg: 'Reddit authorization was denied.' })
-    else if (error === 'youtube_denied') setBanner({ type: 'error', msg: 'YouTube authorization was denied.' })
-    else if (error === 'reddit_state' || error === 'youtube_state') setBanner({ type: 'error', msg: 'OAuth state mismatch — try again.' })
-    else if (error === 'reddit_token') setBanner({ type: 'error', msg: 'Failed to get Reddit token — check your app credentials.' })
-    else if (error === 'youtube_token') setBanner({ type: 'error', msg: 'Failed to get YouTube token — check your app credentials.' })
-
-    if (connected || error) {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('connected')
-      url.searchParams.delete('error')
-      window.history.replaceState({}, '', url.toString())
-    }
+    if (!searchParams.get('connected') && !searchParams.get('error')) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete('connected')
+    url.searchParams.delete('error')
+    window.history.replaceState({}, '', url.toString())
   }, [searchParams])
+
+  useEffect(() => {
+    const platforms = [redditConnected && 'reddit', youtubeConnected && 'youtube'].filter(Boolean) as string[]
+    if (platforms.length === 0) return
+    let cancelled = false
+    for (const platform of platforms) {
+      fetch(`/api/platform-connections/status?platform=${platform}`)
+        .then(r => r.json() as Promise<{ live?: boolean; error?: string }>)
+        .then(d => {
+          if (cancelled) return
+          setHealth(h => ({ ...h, [platform]: d.live ? { state: 'live' } : { state: 'dead', error: d.error ?? 'Connection could not be verified.' } }))
+        })
+        .catch(() => {
+          if (cancelled) return
+          setHealth(h => ({ ...h, [platform]: { state: 'dead', error: 'Connection could not be verified.' } }))
+        })
+    }
+    return () => { cancelled = true }
+  }, [redditConnected, youtubeConnected])
 
   async function handleDisconnect(platform: string) {
     setDisconnecting(platform)
@@ -135,47 +163,75 @@ export default function SettingsClient({
           Connect accounts to post replies directly from SurgeShift without leaving the app.
         </p>
         <div className="space-y-1">
-          {postingConnections.map((item, i) => (
-            <div
-              key={item.platform}
-              className={`flex items-center justify-between py-3.5 ${i < postingConnections.length - 1 ? 'border-b border-white/5' : ''}`}
-            >
-              <div className="flex items-start gap-3">
-                <span style={{ color: item.connected ? 'var(--color-accent)' : 'var(--color-text-dim)' }}>
-                  {item.icon}
-                </span>
-                <div>
-                  <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{item.label}</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
-                    {item.connected && item.username ? `Connected as ${item.username}` : item.description}
-                  </p>
+          {postingConnections.map((item, i) => {
+            const status = item.connected ? health[item.platform] : undefined
+            return (
+              <div
+                key={item.platform}
+                className={`flex items-center justify-between py-3.5 ${i < postingConnections.length - 1 ? 'border-b border-white/5' : ''}`}
+              >
+                <div className="flex items-start gap-3">
+                  <span style={{ color: item.connected ? 'var(--color-accent)' : 'var(--color-text-dim)' }}>
+                    {item.icon}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{item.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-dim)' }}>
+                      {item.connected && item.username ? `Connected as ${item.username}` : item.description}
+                    </p>
+                    {item.connected && !status && (
+                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--color-text-dim)' }}>
+                        <RefreshCw size={10} className="animate-spin" /> Verifying connection…
+                      </p>
+                    )}
+                    {status?.state === 'live' && (
+                      <p className="text-xs mt-1 flex items-center gap-1 text-green-400">
+                        <CheckCircle size={10} /> Live — ready to post
+                      </p>
+                    )}
+                    {status?.state === 'dead' && (
+                      <p className="text-xs mt-1 flex items-center gap-1 text-amber-400">
+                        <AlertTriangle size={10} /> {status.error}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {status?.state === 'dead' && (
+                    <a
+                      href={item.connectHref}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                      style={{ background: 'var(--color-accent)', color: '#000' }}
+                    >
+                      <RefreshCw size={11} />
+                      Reconnect
+                    </a>
+                  )}
+                  {item.connected ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDisconnect(item.platform)}
+                      disabled={disconnecting === item.platform}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                      style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
+                    >
+                      <Link2Off size={11} />
+                      {disconnecting === item.platform ? 'Disconnecting…' : 'Disconnect'}
+                    </button>
+                  ) : (
+                    <a
+                      href={item.connectHref}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                      style={{ background: 'var(--color-accent)', color: '#000' }}
+                    >
+                      <Link2 size={11} />
+                      Connect
+                    </a>
+                  )}
                 </div>
               </div>
-              <div>
-                {item.connected ? (
-                  <button
-                    type="button"
-                    onClick={() => handleDisconnect(item.platform)}
-                    disabled={disconnecting === item.platform}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                    style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
-                  >
-                    <Link2Off size={11} />
-                    {disconnecting === item.platform ? 'Disconnecting…' : 'Disconnect'}
-                  </button>
-                ) : (
-                  <a
-                    href={item.connectHref}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
-                    style={{ background: 'var(--color-accent)', color: '#000' }}
-                  >
-                    <Link2 size={11} />
-                    Connect
-                  </a>
-                )}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

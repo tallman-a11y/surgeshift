@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Plus, Settings, LogOut, ChevronDown } from 'lucide-react'
+import { Zap, Plus, Settings, LogOut, ChevronDown, Inbox, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/lib/supabase/auth-actions'
 import { cn } from '@/lib/utils'
@@ -200,6 +200,22 @@ export default function ShiftBar({ shiftState, activeBrandId, onBrandSelect, onV
               <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
                 <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>{userEmail}</p>
               </div>
+              <button
+                type="button"
+                onClick={() => { router.push('/dashboard'); setUserMenuOpen(false) }}
+                className="flex items-center gap-2 w-full px-3 py-2 text-xs transition-all text-left"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <Inbox size={12} /> Opportunity feed
+              </button>
+              <button
+                type="button"
+                onClick={() => { router.push('/brands'); setUserMenuOpen(false) }}
+                className="flex items-center gap-2 w-full px-3 py-2 text-xs transition-all text-left"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <Tag size={12} /> Brands
+              </button>
               <button
                 type="button"
                 onClick={() => { router.push('/settings'); setUserMenuOpen(false) }}
