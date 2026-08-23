@@ -30,6 +30,13 @@ function twitterToRaw(p: TwitterResult): RawPost {
 // YouTube: 8 keywords, Twitter: 4), so without rotation a brand with 60 keywords was
 // never searched past its first 8. Rotate by day so the nightly cron walks the whole
 // list over time; repeat scans on the same day stay deterministic (de-dupe by thread_id).
+function interleave<T>(...lists: T[][]): T[] {
+  const out: T[] = []
+  const longest = Math.max(0, ...lists.map(l => l.length))
+  for (let i = 0; i < longest; i++) for (const l of lists) if (i < l.length) out.push(l[i])
+  return out
+}
+
 export function rotateForToday<T>(list: T[], stride = 5): T[] {
   if (list.length === 0) return list
   const day = Math.floor(Date.now() / 86_400_000)
@@ -49,6 +56,7 @@ export async function runScan(
   brand: Brand & { keywords: string[]; subreddits: string[] },
   userId: string,
   client?: SupabaseClient,
+  opts: { maxToScore?: number } = {},
 ): Promise<ScanResult[]> {
   // Dashboard scans use the caller's session (RLS); the cron passes the service client.
   const supabase = client ?? await createClient()
@@ -70,18 +78,20 @@ export async function runScan(
     scanTwitter(keywords),
   ])
 
-  const allPosts: RawPost[] = [
-    ...redditPosts.map(redditToRaw),
-    ...youtubePosts.map(youtubeToRaw),
-    ...twitterPosts.map(twitterToRaw),
-  ]
+  // Interleave platforms before the scoring cap below; concatenating meant Reddit alone
+  // filled the cap whenever it returned 25+ posts and YouTube was never scored.
+  const allPosts: RawPost[] = interleave(
+    redditPosts.map(redditToRaw),
+    youtubePosts.map(youtubeToRaw),
+    twitterPosts.map(twitterToRaw),
+  )
     .filter(p => !existingIds.has(p.id))
     .filter(p => (p.title + p.body).trim().length > 30)
 
   let newCount = 0
 
-  // Cap posts scored per scan to stay within Vercel function timeout
-  const postsToScore = allPosts.slice(0, 25)
+  // Cap posts scored per scan to stay within the function timeout (60s manual, 300s cron)
+  const postsToScore = allPosts.slice(0, opts.maxToScore ?? 25)
 
   // Score all posts in parallel
   const scored = await Promise.all(

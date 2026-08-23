@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const results = []
   for (const brand of brands as BrandRow[]) {
     try {
-      const scanResults = await runScan(brand, brand.user_id, supabase)
+      const scanResults = await runScan(brand, brand.user_id, supabase, { maxToScore: 40 })
       results.push({ brand: brand.name, ...scanResults[0] })
     } catch (err) {
       results.push({ brand: brand.name, error: String(err) })
