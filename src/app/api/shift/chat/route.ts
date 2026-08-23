@@ -462,8 +462,8 @@ async function executeTool(
       }
 
       const contentInstructions: Record<string, string> = {
-        blog_post: 'Write a complete, well-structured blog post (600–900 words) in markdown format. Include a compelling headline, 3–5 sections with subheadings, and a clear CTA mentioning the product URL at the end.',
-        tweet_thread: 'Write a 6–10 tweet thread. Number each tweet. Each tweet max 280 chars. Hook in tweet 1. Build a narrative. CTA with product URL in final tweet.',
+        blog_post: 'Write a complete, well-structured blog post (600–900 words) in markdown format. Include a compelling headline, 3–5 sections with subheadings, and a clear CTA pointing to the link at the end.',
+        tweet_thread: 'Write a 6–10 tweet thread. Number each tweet. Each tweet max 280 chars. Hook in tweet 1. Build a narrative. CTA with the link in the final tweet.',
         linkedin_post: 'Write a LinkedIn post (200–300 words). Start with a hook. Tell a story or share an insight. Mention the product naturally. End with a question to drive comments.',
         email_sequence: 'Write a 3-email nurture sequence. Email 1: value/education. Email 2: problem/solution. Email 3: social proof + CTA. Include subject lines. Markdown format.',
         video_script: 'Write a 60–90 second video script. Hook (0–5s). Problem (5–20s). Solution with product (20–50s). Proof/benefit (50–70s). CTA (70–90s). Include visual notes in brackets.',
@@ -480,7 +480,7 @@ async function executeTool(
 
 Brand: ${brand.name}
 Description: ${brand.description}
-URL: ${brand.url}
+Link (the call to action in every piece — send readers here to see it for themselves): ${brand.url}
 Voice: ${brand.voice_notes ?? 'Professional, knowledgeable, direct. Community member tone, not marketer.'}
 ${sourceContext}
 ${topic ? `\nTopic/angle: ${topic}` : ''}
