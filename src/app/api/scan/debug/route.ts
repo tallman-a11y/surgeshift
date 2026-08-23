@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const [redditPosts, youtubePosts, twitterPosts] = await Promise.allSettled([
     scanReddit(b.keywords, b.subreddits),
     scanYouTube(b.keywords),
-    scanTwitter(b.keywords),
+    scanTwitter(b.keywords, { strict: true }),
   ])
 
   // Test score: run the first Reddit post through Claude to see raw score output
