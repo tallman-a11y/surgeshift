@@ -38,7 +38,7 @@ Body: ${post.body}
 TASK:
 1. Score this post 0-100 for how relevant it is as a marketing opportunity for ${brand.name}.
    Score GENEROUSLY — our goal is to find any thread where a community member mentioning ${brand.name} would add genuine value:
-   - 80-100: Person is directly asking for something ${brand.name} does (exam prep, tools, study resources, weld inspection help, certifications)
+   - 80-100: Person is directly asking for something ${brand.name} does (a problem, tool, or resource that the Description covers)
    - 60-79: Strong match — they're discussing a problem or topic ${brand.name} solves
    - 40-59: Moderate match — the topic overlaps with ${brand.name}'s world, a mention would be welcome
    - 25-39: Weak but possible — tangentially related, only reply if very natural
@@ -50,12 +50,12 @@ TASK:
    - Includes the URL: ${brand.url}
    - Sounds like a knowledgeable community member, not a marketer
    - Is NOT generic — reference specifics from their post
-   - ONLY mention the specific ${brand.name} feature(s) that solve their actual problem. Never bring up unrelated modules. If they asked about defects → mention Field Oracle. If they asked about codes → mention Code Navigator. If they asked about WPS → mention WPS Builder. If they asked about settings → mention Weld Advisor. If they asked about certification exams → mention exam prep. Do NOT mention CWI/certifications unless the post is about certifications.
+   - ONLY mention the specific ${brand.name} feature(s) that solve their actual problem. Never bring up unrelated modules. Match the feature to their situation using the Description and Voice/Tone notes; never list features they did not ask about, and never bring up pricing unless they asked about cost.
 ${brand.disclosure_line ? `   - End every reply with this exact disclosure line on its own line: "${brand.disclosure_line}"` : ''}
    If score < 35, drafted_reply should be empty string.
 
 Respond ONLY in this JSON format (no markdown, no code block):
-{"score":85,"reason":"User is asking exactly for CWI exam prep resources — direct match.","drafted_reply":"For CWI Part B, the visual exam is what trips most people up..."}
+{"score":85,"reason":"User is directly asking for something ${brand.name} provides — direct match.","drafted_reply":"Here is what I would check first in your situation..."}
 `
 
   const msg = await anthropic.messages.create({

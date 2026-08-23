@@ -26,6 +26,17 @@ function twitterToRaw(p: TwitterResult): RawPost {
   return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'twitter' }
 }
 
+// Each scanner only consumes the head of the list (Reddit: 6 keywords + 4 subreddits,
+// YouTube: 8 keywords, Twitter: 4), so without rotation a brand with 60 keywords was
+// never searched past its first 8. Rotate by day so the nightly cron walks the whole
+// list over time; repeat scans on the same day stay deterministic (de-dupe by thread_id).
+export function rotateForToday<T>(list: T[], stride = 5): T[] {
+  if (list.length === 0) return list
+  const day = Math.floor(Date.now() / 86_400_000)
+  const offset = (day * stride) % list.length
+  return [...list.slice(offset), ...list.slice(0, offset)]
+}
+
 export type ScanResult = {
   brand_id: string
   platform: string
@@ -41,6 +52,8 @@ export async function runScan(
 ): Promise<ScanResult[]> {
   // Dashboard scans use the caller's session (RLS); the cron passes the service client.
   const supabase = client ?? await createClient()
+  const keywords = rotateForToday(brand.keywords, 5)
+  const subreddits = rotateForToday(brand.subreddits, 3)
   const results: ScanResult[] = []
 
   // Gather existing thread IDs to avoid re-processing
@@ -52,9 +65,9 @@ export async function runScan(
 
   // Collect all posts from all platforms
   const [redditPosts, youtubePosts, twitterPosts] = await Promise.all([
-    scanReddit(brand.keywords, brand.subreddits),
-    scanYouTube(brand.keywords),
-    scanTwitter(brand.keywords),
+    scanReddit(keywords, subreddits),
+    scanYouTube(keywords),
+    scanTwitter(keywords),
   ])
 
   const allPosts: RawPost[] = [
