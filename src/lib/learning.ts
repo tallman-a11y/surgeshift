@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createServiceClient } from '@/lib/supabase/service'
 
 /**
  * Learning signals.
@@ -41,13 +42,20 @@ export function classify(drafted: string, posted?: string | null): Signal {
   return normalize(drafted) === normalize(posted) ? 'accept' : 'edit'
 }
 
+/**
+ * `_caller` is accepted so call sites read naturally, but the write always uses the
+ * service client: shift_feedback is a genome table whose only policy grants
+ * service_role. Writing it with the caller's client is silently rejected by RLS —
+ * which is exactly how this table stayed empty while dismissals appeared to work.
+ */
 export async function recordSignal(
-  supabase: SupabaseClient,
+  _caller: SupabaseClient,
   signal: Signal,
   input: SignalInput,
 ): Promise<void> {
   try {
-    await supabase.from('shift_feedback').insert({
+    const admin = createServiceClient()
+    const { error } = await admin.from('shift_feedback').insert({
       user_id: input.userId,
       signal,
       original_text: input.draftedReply,
@@ -59,8 +67,10 @@ export async function recordSignal(
         ...(input.reason ? { reason: input.reason } : {}),
       },
     })
-  } catch {
-    // A failed signal must never break the action the operator actually asked for.
+    // Never block the operator's action on bookkeeping — but never hide it either.
+    if (error) console.error('[learning] could not record signal:', error.message)
+  } catch (e) {
+    console.error('[learning] could not record signal:', String(e))
   }
 }
 
