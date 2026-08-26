@@ -1,5 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-
 /**
  * Attribution for posted replies.
  *
@@ -78,26 +76,3 @@ export function tagReplyLinks(replyText: string, brandUrl: string, code: string)
   return { text, tagged }
 }
 
-export type TrackedLinkInput = {
-  brandId: string
-  opportunityId: string | null
-  targetUrl: string
-  platform: string
-  subreddit?: string | null
-}
-
-/** Persist the code so a later visit can be traced back to the exact thread. */
-export async function recordTrackedLink(
-  supabase: SupabaseClient,
-  code: string,
-  input: TrackedLinkInput,
-): Promise<void> {
-  await supabase.from('tracked_links').insert({
-    code,
-    brand_id: input.brandId,
-    opportunity_id: input.opportunityId,
-    target_url: input.targetUrl,
-    platform: input.platform,
-    subreddit: input.subreddit ?? null,
-  })
-}
