@@ -40,7 +40,21 @@ export default function OpportunityCard({
   const platformLabel = opp.platform === 'twitter' ? 'X/Twitter' : opp.platform
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(replyText)
+    // Ask the server for the attributable version first. Reddit replies are pasted
+    // by hand today, so without this the majority of posts would be untrackable.
+    let text = replyText
+    try {
+      const res = await fetch('/api/opportunities/tracked-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: opp.id, replyText }),
+      })
+      if (res.ok) {
+        const data = await res.json() as { text?: string }
+        if (data.text) { text = data.text; setReplyText(data.text) }
+      }
+    } catch { /* fall back to the untagged draft rather than blocking the copy */ }
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

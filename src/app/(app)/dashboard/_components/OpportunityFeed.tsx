@@ -58,6 +58,17 @@ export default function OpportunityFeed({
       setOpps(prev => prev.filter(o => o.id !== id))
       return
     }
+    // Dismissals go through the API so the rejection is recorded as a learning
+    // signal — a bare status update would throw that judgement away.
+    if (status === 'dismissed') {
+      const res = await fetch('/api/opportunities/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: id }),
+      })
+      if (res.ok) setOpps(prev => prev.filter(o => o.id !== id))
+      return
+    }
     const supabase = createClient()
     const { error } = await supabase.from('opportunities').update({
       status,

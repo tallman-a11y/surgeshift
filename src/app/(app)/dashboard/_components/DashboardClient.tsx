@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ScanSearch, Loader2, Zap, Target, CheckCircle2, TrendingUp, Bug, X } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
@@ -111,7 +112,7 @@ export default function DashboardClient({
         <p className="text-sm max-w-xs" style={{ color: 'var(--color-text-muted)' }}>
           Add your first brand to start scanning social media for high-intent opportunities.
         </p>
-        <a href="/brands/new" className="btn-accent mt-2">Add Your First Brand</a>
+        <Link href="/brands/new" className="btn-accent mt-2">Add Your First Brand</Link>
       </div>
     )
   }

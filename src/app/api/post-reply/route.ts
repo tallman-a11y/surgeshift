@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getValidToken, TokenRefreshError, type PlatformConnection } from '@/lib/platform-tokens'
+import { buildTrackedReply, type BrandForTracking, type OpportunityForTracking } from '@/lib/tracked-reply'
+import { recordPostOutcome } from '@/lib/learning'
 
 type Opportunity = {
   id: string
+  brand_id: string
   platform: string
   thread_url: string
+  title: string | null
+  body: string | null
+  subreddit: string | null
   drafted_reply: string
+  tracked_code: string | null
 }
 
 function extractRedditPostId(url: string): string | null {
@@ -70,12 +77,31 @@ export async function POST(req: NextRequest) {
   // Load the opportunity
   const { data: opp } = await supabase
     .from('opportunities')
-    .select('id, platform, thread_url, drafted_reply')
+    .select('id, brand_id, platform, thread_url, title, body, subreddit, drafted_reply, tracked_code')
     .eq('id', opportunityId)
     .single()
 
   if (!opp) return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 })
   const opportunity = opp as Opportunity
+
+  // Tag the link so this reply is attributable, reusing the code if Copy already
+  // minted one — otherwise the same thread would report under two identities.
+  const { data: brand } = await supabase
+    .from('brands')
+    .select('id, name, url')
+    .eq('id', opportunity.brand_id)
+    .single()
+
+  let outgoingText = replyText
+  if (brand) {
+    const tracked = await buildTrackedReply(
+      supabase,
+      opportunity as OpportunityForTracking,
+      brand as BrandForTracking,
+      replyText,
+    )
+    outgoingText = tracked.text
+  }
 
   // Load platform connection
   const { data: conn } = await supabase
@@ -105,22 +131,37 @@ export async function POST(req: NextRequest) {
   if (opportunity.platform === 'reddit') {
     const postId = extractRedditPostId(opportunity.thread_url)
     if (!postId) return NextResponse.json({ error: 'Could not extract Reddit post ID from URL' }, { status: 400 })
-    result = await postToReddit(token, postId, replyText)
+    result = await postToReddit(token, postId, outgoingText)
   } else if (opportunity.platform === 'youtube') {
     const { videoId, commentId } = extractYouTubeIds(opportunity.thread_url)
     if (!videoId) return NextResponse.json({ error: 'Could not extract YouTube video ID from URL' }, { status: 400 })
-    result = await postToYouTube(token, videoId, commentId, replyText)
+    result = await postToYouTube(token, videoId, commentId, outgoingText)
   } else {
     return NextResponse.json({ error: `Auto-posting not supported for ${opportunity.platform}` }, { status: 400 })
   }
 
   if (!result.ok) return NextResponse.json({ error: result.error ?? 'Platform API error' }, { status: 502 })
 
-  // Mark as posted
+  // Mark as posted, keeping the exact text that went out — the delta between it
+  // and drafted_reply is the training signal.
   await supabase.from('opportunities').update({
     status: 'posted',
     posted_at: new Date().toISOString(),
+    posted_reply_text: outgoingText,
   }).eq('id', opportunityId)
 
-  return NextResponse.json({ ok: true })
+  const signal = await recordPostOutcome(supabase, {
+    userId: user.id,
+    threadContext: `${opportunity.title ?? ''}\n\n${opportunity.body ?? ''}`.trim(),
+    draftedReply: opportunity.drafted_reply,
+    postedReply: replyText,
+    metadata: {
+      opportunity_id: opportunity.id,
+      platform: opportunity.platform,
+      subreddit: opportunity.subreddit,
+      tracked_code: opportunity.tracked_code,
+    },
+  })
+
+  return NextResponse.json({ ok: true, signal })
 }

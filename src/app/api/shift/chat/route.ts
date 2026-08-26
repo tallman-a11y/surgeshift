@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { runScan } from '@/lib/scanner'
-import { scoreAndDraft } from '@/lib/anthropic'
 import {
   VoyageEmbeddingProvider,
   retrieveRelevantMemories,
@@ -12,6 +11,7 @@ import {
 import { SupabaseMemoryStore } from '@/lib/supabase-memory-store'
 import { createServiceClient } from '@/lib/supabase/service'
 import { surgeShiftPersona } from '@/lib/shift-brain'
+import { recordSignal } from '@/lib/learning'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -130,10 +130,13 @@ const SHIFT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'dismiss_opportunity',
-    description: 'Dismiss an opportunity that is not a good fit',
+    description: 'Dismiss an opportunity that is not a good fit. Always pass a short reason — it trains the scoring.',
     input_schema: {
       type: 'object' as const,
-      properties: { opportunity_id: { type: 'string' } },
+      properties: {
+        opportunity_id: { type: 'string' },
+        reason: { type: 'string', description: 'Why this is not a fit, in a few words (e.g. "thread is dead", "sub bans self-promo", "already answered well")' },
+      },
       required: ['opportunity_id'],
     },
   },
@@ -490,12 +493,52 @@ Task: ${instruction}`,
       })
 
       const generated = msg.content[0].type === 'text' ? msg.content[0].text : ''
+
+      // Persist it. This used to render into a side panel and vanish on refresh —
+      // an entire module that produced nothing durable.
+      const firstHeading = generated.match(/^#{1,3}\s+(.+)$/m)?.[1]
+        ?? generated.split('\n').find(l => l.trim().length > 0)?.slice(0, 120)
+      await supabase.from('content_pieces').insert({
+        brand_id: brand.id,
+        user_id: userId,
+        content_type,
+        title: firstHeading?.replace(/^#+\s*/, '').trim() ?? null,
+        body: generated,
+        topic: topic ?? null,
+        source_opportunity_id: source_opportunity_id ?? null,
+        status: 'draft',
+      })
+
       return `GENERATED_${content_type.toUpperCase()}\n\n${generated}`
     }
 
     case 'dismiss_opportunity': {
-      const { opportunity_id } = toolInput as { opportunity_id: string }
-      await supabase.from('opportunities').update({ status: 'dismissed' }).eq('id', opportunity_id)
+      const { opportunity_id, reason } = toolInput as { opportunity_id: string; reason?: string }
+      const { data: doomed } = await supabase
+        .from('opportunities')
+        .select('id, title, body, drafted_reply, platform, subreddit, score')
+        .eq('id', opportunity_id)
+        .single()
+
+      await supabase
+        .from('opportunities')
+        .update({ status: 'dismissed', dismiss_reason: reason?.slice(0, 500) ?? null })
+        .eq('id', opportunity_id)
+
+      // Keep the judgement — a rejection is the clearest signal an operator gives.
+      if (doomed) {
+        const d = doomed as {
+          id: string; title: string | null; body: string | null
+          drafted_reply: string | null; platform: string; subreddit: string | null; score: number
+        }
+        await recordSignal(supabase, 'reject', {
+          userId,
+          threadContext: `${d.title ?? ''}\n\n${d.body ?? ''}`.trim(),
+          draftedReply: d.drafted_reply ?? '',
+          reason: reason ?? null,
+          metadata: { opportunity_id: d.id, platform: d.platform, subreddit: d.subreddit, score: d.score },
+        })
+      }
       return 'Opportunity dismissed.'
     }
 
