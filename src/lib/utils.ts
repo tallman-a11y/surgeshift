@@ -32,6 +32,24 @@ export function timeAgo(date: string): string {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+/**
+ * How old is the THREAD itself — the number that decides whether a reply gets seen.
+ * `found_at` only says when SurgeShift noticed it, which is always "recently" and
+ * told you nothing. Reddit archives most posts at ~6 months and rejects replies.
+ */
+export function threadAge(sourcePublishedAt: string | null | undefined, platform: string): {
+  label: string
+  tone: 'live' | 'cooling' | 'dead' | 'unknown'
+} {
+  if (!sourcePublishedAt) return { label: 'age unknown', tone: 'unknown' }
+  const days = Math.floor((Date.now() - new Date(sourcePublishedAt).getTime()) / 86_400_000)
+  if (Number.isNaN(days)) return { label: 'age unknown', tone: 'unknown' }
+  const label = days < 1 ? 'posted today' : days === 1 ? 'posted yesterday' : `posted ${days}d ago`
+  if (days <= 30) return { label, tone: 'live' }
+  if (days <= 120) return { label, tone: 'cooling' }
+  return { label: platform === 'reddit' ? `${label} · likely archived` : label, tone: 'dead' }
+}
+
 export function truncate(str: string, len: number): string {
   if (str.length <= len) return str
   return str.slice(0, len).trimEnd() + '…'

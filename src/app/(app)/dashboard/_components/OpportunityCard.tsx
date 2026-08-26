@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react'
-import { scoreColor, scoreBg, scoreBorder, timeAgo, truncate } from '@/lib/utils'
+import { scoreColor, scoreBg, scoreBorder, timeAgo, threadAge, truncate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 type Opportunity = {
@@ -18,6 +18,7 @@ type Opportunity = {
   drafted_reply: string
   status: string
   found_at: string
+  source_published_at?: string | null
 }
 
 export default function OpportunityCard({
@@ -33,7 +34,9 @@ export default function OpportunityCard({
   const [posting, setPosting] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
 
-  const canAutoPost = opp.platform === 'reddit' || opp.platform === 'youtube'
+  const age = threadAge(opp.source_published_at, opp.platform)
+  // Reddit rejects replies on archived posts outright, so do not offer a one-click post.
+  const canAutoPost = (opp.platform === 'reddit' || opp.platform === 'youtube') && !(opp.platform === 'reddit' && age.tone === 'dead')
   const platformLabel = opp.platform === 'twitter' ? 'X/Twitter' : opp.platform
 
   async function handleCopy() {
@@ -87,7 +90,13 @@ export default function OpportunityCard({
               {opp.subreddit && (
                 <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>r/{opp.subreddit}</span>
               )}
-              <span className="text-[11px]" style={{ color: 'var(--color-text-dim)' }}>· {timeAgo(opp.found_at)}</span>
+              <span
+                className="text-[11px]"
+                style={{ color: age.tone === 'dead' ? '#f87171' : age.tone === 'live' ? 'var(--color-green)' : 'var(--color-text-dim)' }}
+                title={age.tone === 'unknown' ? `Found ${timeAgo(opp.found_at)}; this one predates thread-age tracking` : `Found ${timeAgo(opp.found_at)}`}
+              >
+                · {age.label}
+              </span>
             </div>
             <h3 className="text-sm font-semibold leading-snug" style={{ color: 'var(--color-text)' }}>
               {truncate(opp.title, 110)}

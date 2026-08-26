@@ -18,9 +18,20 @@ export type ScoredOpportunity = {
   drafted_reply: string
 }
 
+function ageLine(publishedAt?: string): string {
+  if (!publishedAt) return 'Age: unknown'
+  const t = Date.parse(publishedAt)
+  if (Number.isNaN(t)) return 'Age: unknown'
+  const days = Math.round((Date.now() - t) / 86_400_000)
+  if (days <= 7) return `Age: ${days} days old — active conversation, a reply will be seen`
+  if (days <= 30) return `Age: ${days} days old — still live`
+  if (days <= 90) return `Age: ${days} days old — cooling off, fewer people are still reading`
+  return `Age: ${days} days old — likely dead; on Reddit it may be archived and reject replies entirely`
+}
+
 export async function scoreAndDraft(
   brand: Brand,
-  post: { title: string; body: string; platform: string; subreddit?: string }
+  post: { title: string; body: string; platform: string; subreddit?: string; publishedAt?: string }
 ): Promise<ScoredOpportunity> {
   const prompt = `You are a marketing intelligence engine for ${brand.name}.
 
@@ -34,15 +45,22 @@ ${brand.voice_notes ? `Voice/Tone: ${brand.voice_notes}` : ''}
 POST (from ${post.platform}${post.subreddit ? ` / r/${post.subreddit}` : ''}):
 Title: ${post.title}
 Body: ${post.body}
+${ageLine(post.publishedAt)}
 
 TASK:
 1. Score this post 0-100 for how relevant it is as a marketing opportunity for ${brand.name}.
-   Score GENEROUSLY — our goal is to find any thread where a community member mentioning ${brand.name} would add genuine value:
-   - 80-100: Person is directly asking for something ${brand.name} does (a problem, tool, or resource that the Description covers)
-   - 60-79: Strong match — they're discussing a problem or topic ${brand.name} solves
-   - 40-59: Moderate match — the topic overlaps with ${brand.name}'s world, a mention would be welcome
-   - 25-39: Weak but possible — tangentially related, only reply if very natural
-   - Below 25: No real connection, skip
+   The score decides what a busy operator reads FIRST, so spread it out — a score
+   that is 80 for everything is useless. Judge on three things together:
+   (a) INTENT — are they actively asking for what ${brand.name} does, or just adjacent?
+   (b) REACH — will a reply still be seen? Use the Age line above. A perfect match on a
+       year-old thread is worth less than a decent match posted this week.
+   (c) FIT — can ${brand.name} genuinely answer, or would the mention be a stretch?
+   - 85-100: Directly asking for what ${brand.name} does, RIGHT NOW (days old). Reply today.
+   - 70-84: Strong match and still live (weeks old), or a perfect match cooling off.
+   - 50-69: Real topical overlap; a mention would be welcome but is not urgent.
+   - 30-49: Tangential, or a good match on a thread old enough that few will see it.
+   - Below 30: No real connection, or so old that replying is pointless. Skip.
+   Reserve 90+ for the handful you would stake the day on.
 2. Write a 2-3 sentence reason for the score.
 3. If score >= 35, write a natural, human-sounding reply that:
    - Genuinely addresses their question or need first

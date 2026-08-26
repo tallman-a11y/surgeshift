@@ -17,7 +17,7 @@ export type RawPost = {
 }
 
 function redditToRaw(p: RedditPost): RawPost {
-  return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'reddit', subreddit: p.subreddit }
+  return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'reddit', subreddit: p.subreddit, publishedAt: p.publishedAt ?? undefined }
 }
 function youtubeToRaw(p: YouTubeResult): RawPost {
   return { id: p.id, title: p.title, body: p.body, url: p.url, author: p.author, platform: 'youtube', publishedAt: p.publishedAt }
@@ -56,7 +56,7 @@ export async function runScan(
   brand: Brand & { keywords: string[]; subreddits: string[] },
   userId: string,
   client?: SupabaseClient,
-  opts: { maxToScore?: number } = {},
+  opts: { maxToScore?: number; maxAgeDays?: number } = {},
 ): Promise<ScanResult[]> {
   // Dashboard scans use the caller's session (RLS); the cron passes the service client.
   const supabase = client ?? await createClient()
@@ -71,10 +71,12 @@ export async function runScan(
     .eq('brand_id', brand.id)
   const existingIds = new Set((existing ?? []).map(r => r.thread_id as string))
 
-  // Collect all posts from all platforms
+  // Collect all posts from all platforms. Recency windows live in each scanner:
+  // stale threads are dropped BEFORE scoring so we never spend a Haiku call — or a
+  // slot in the queue — on a thread nobody will read.
   const [redditPosts, youtubePosts, twitterPosts] = await Promise.all([
-    scanReddit(keywords, subreddits),
-    scanYouTube(keywords),
+    scanReddit(keywords, subreddits, { maxAgeDays: opts.maxAgeDays }),
+    scanYouTube(keywords, { commentMaxAgeDays: opts.maxAgeDays }),
     scanTwitter(keywords),
   ])
 
@@ -119,6 +121,9 @@ export async function runScan(
           score_reason: result.reason,
           drafted_reply: result.drafted_reply,
           status: 'pending',
+          // The REAL publish date, not when we found it. NULL when the platform
+          // (or Brave) would not tell us. See migration 003.
+          source_published_at: post.publishedAt ?? null,
         })
         newCount++
       } catch { /* skip individual insert failures */ }
