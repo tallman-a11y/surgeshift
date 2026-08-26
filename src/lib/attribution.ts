@@ -35,21 +35,46 @@ export function withRef(rawUrl: string, code: string): string {
   }
 }
 
+/** origin + path, trailing slash removed — the identity we match links on. */
+function normalizeUrl(raw: string): string | null {
+  try {
+    const u = new URL(raw)
+    return (u.origin + u.pathname).replace(/\/$/, '').toLowerCase()
+  } catch {
+    return null
+  }
+}
+
 /**
  * Rewrite every occurrence of the brand's URL inside a drafted reply so it carries
  * the ref code. Returns the text unchanged when the draft never mentions the link.
+ *
+ * Parses candidates as URLs rather than pattern-matching them. Drafts end sentences
+ * on the link ("…/demo.") and a regex lookahead cannot reliably tell that full stop
+ * from a path segment — the first version silently tagged nothing because of it.
  */
 export function tagReplyLinks(replyText: string, brandUrl: string, code: string): { text: string; tagged: boolean } {
   if (!replyText || !brandUrl) return { text: replyText, tagged: false }
 
-  const tracked = withRef(brandUrl, code)
-  // Match the brand URL with or without a trailing slash, not already carrying a ref,
-  // and stop before sentence punctuation so "…/demo." keeps its full stop.
-  const escaped = brandUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\/$/, '')
-  const re = new RegExp(`${escaped}/?(?![\\w./?=&-])`, 'g')
+  const target = normalizeUrl(brandUrl)
+  if (!target) return { text: replyText, tagged: false }
 
   let tagged = false
-  const text = replyText.replace(re, () => { tagged = true; return tracked })
+  const text = replyText.replace(/https?:\/\/[^\s<>()[\]"']+/g, (match) => {
+    // Trailing sentence punctuation belongs to the prose, not the URL.
+    const trimmed = match.replace(/[.,;:!?]+$/, '')
+    const suffix = match.slice(trimmed.length)
+
+    if (normalizeUrl(trimmed) !== target) return match
+    // Already carries a ref (re-tagging an edited draft) — leave it alone.
+    try {
+      if (new URL(trimmed).searchParams.has('ref')) return match
+    } catch { return match }
+
+    tagged = true
+    return withRef(trimmed, code) + suffix
+  })
+
   return { text, tagged }
 }
 
