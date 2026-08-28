@@ -27,10 +27,17 @@ export function OPTIONS() {
  * codes are still recorded so a typo in a destination's snippet is visible rather
  * than silently dropped.
  *
- * Destination snippet:
+ * Destination snippet — the Blob type MUST be text/plain. `application/json` is
+ * not a CORS-simple content type, so it makes sendBeacon trigger a preflight it
+ * cannot complete and the beacon fails silently. Verified against production:
+ * the JSON variant never arrived, the text/plain one did. The body is still JSON;
+ * only the declared type differs, and req.json() parses it either way.
+ *
  *   const ref = new URLSearchParams(location.search).get('ref')
  *   if (ref) navigator.sendBeacon('https://surgeshiftai.com/api/attribution/visit',
- *     new Blob([JSON.stringify({ ref, path: location.pathname })], { type: 'application/json' }))
+ *     new Blob([JSON.stringify({ ref, path: location.pathname })], { type: 'text/plain;charset=UTF-8' }))
+ *
+ * Live implementations: RealShift and WeldShift `components/app/ReferralBeacon.tsx`.
  */
 export async function POST(req: NextRequest) {
   let body: { ref?: string; path?: string }
