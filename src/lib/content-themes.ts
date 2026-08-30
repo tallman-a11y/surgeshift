@@ -36,6 +36,29 @@ export type Theme = {
 // values merge unrelated subjects; higher ones split one question into three.
 const CLUSTER_THRESHOLD = 0.82
 
+// Voyage accepts up to 1000 inputs per request; stay well under so a growing
+// corpus never silently starts failing.
+const EMBED_BATCH = 128
+
+/** Truncate by code point, so an emoji is never cut in half. */
+export function truncateSafely(text: string, maxChars: number): string {
+  const points = [...text]
+  return points.length <= maxChars ? text : points.slice(0, maxChars).join('')
+}
+
+/**
+ * Voyage rejects an entire batch as invalid UTF-8 if any single input contains a
+ * lone surrogate — and slicing a string mid-emoji produces exactly that. One
+ * broken comment out of 216 took down a whole brand's roadmap before this
+ * existed, and the API's only clue was "please ensure your input is valid UTF-8".
+ */
+export function sanitizeForEmbedding(text: string): string {
+  return text
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
+    .trim()
+}
+
 // A pair is a coincidence. Three people asking the same thing is a topic.
 const MIN_CLUSTER_SIZE = 3
 
@@ -51,9 +74,19 @@ export async function buildThemes(
   if (!embedder.enabled()) return { themes: [], skipped: 'VOYAGE_API_KEY is not set' }
 
   // The title carries the question; a lead paragraph of body disambiguates it.
-  const texts = items.map(i => `${i.title}\n${(i.body ?? '').slice(0, 300)}`.trim())
-  const embeddings = await embedder.embedBatch(texts, 'document')
-  if (!embeddings) return { themes: [], skipped: 'embedding failed' }
+  const texts = items.map(i =>
+    sanitizeForEmbedding(`${i.title}\n${truncateSafely(i.body ?? '', 300)}`),
+  )
+
+  // Chunked so one oversized corpus cannot fail the whole run.
+  const embeddings: number[][] = []
+  for (let i = 0; i < texts.length; i += EMBED_BATCH) {
+    const batch = await embedder.embedBatch(texts.slice(i, i + EMBED_BATCH), 'document')
+    if (!batch) {
+      return { themes: [], skipped: `embedding failed on questions ${i + 1}–${Math.min(i + EMBED_BATCH, texts.length)}` }
+    }
+    embeddings.push(...batch)
+  }
 
   const withEmbeddings = items.map((item, i) => ({ ...item, embedding: embeddings[i] ?? null }))
   const clusters = greedyCluster(withEmbeddings, CLUSTER_THRESHOLD)
