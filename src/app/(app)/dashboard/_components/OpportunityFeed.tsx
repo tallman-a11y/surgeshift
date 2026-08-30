@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import OpportunityCard from './OpportunityCard'
 import { Loader2, SearchX } from 'lucide-react'
+import type { PolicyVerdict } from '@/lib/posting-policy'
 
 type Opportunity = {
   id: string
@@ -19,6 +20,7 @@ type Opportunity = {
   drafted_reply: string
   status: string
   found_at: string
+  source_published_at?: string | null
 }
 
 export default function OpportunityFeed({
@@ -30,6 +32,9 @@ export default function OpportunityFeed({
 }) {
   const [opps, setOpps] = useState<Opportunity[]>([])
   const [loading, setLoading] = useState(true)
+  // Posting-governor verdicts, so the operator sees the ban risk on the card
+  // rather than discovering it when the server refuses the post.
+  const [verdicts, setVerdicts] = useState<Record<string, PolicyVerdict>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -47,8 +52,25 @@ export default function OpportunityFeed({
     }
 
     const { data } = await query
-    setOpps((data ?? []) as Opportunity[])
+    const rows = (data ?? []) as Opportunity[]
+    setOpps(rows)
     setLoading(false)
+
+    // Verdicts arrive after the list so the feed never waits on them; cards
+    // render without a badge until they land.
+    const pending = rows.filter(o => o.status === 'pending').map(o => o.id)
+    if (pending.length === 0) { setVerdicts({}); return }
+    try {
+      const res = await fetch('/api/opportunities/policy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: pending }),
+      })
+      if (res.ok) {
+        const body = await res.json() as { verdicts?: Record<string, PolicyVerdict> }
+        setVerdicts(body.verdicts ?? {})
+      }
+    } catch { /* a missing badge must not break the queue */ }
   }, [brandIds, filter])
 
   useEffect(() => { load() }, [load])
@@ -101,7 +123,7 @@ export default function OpportunityFeed({
   return (
     <div className="flex flex-col gap-4">
       {opps.map(opp => (
-        <OpportunityCard key={opp.id} opp={opp} onStatusChange={(id, status, dbAlreadyUpdated) => updateStatus(id, status, dbAlreadyUpdated)} />
+        <OpportunityCard key={opp.id} opp={opp} verdict={verdicts[opp.id]} onStatusChange={(id, status, dbAlreadyUpdated) => updateStatus(id, status, dbAlreadyUpdated)} />
       ))}
     </div>
   )

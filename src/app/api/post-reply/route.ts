@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getValidToken, TokenRefreshError, type PlatformConnection } from '@/lib/platform-tokens'
 import { buildTrackedReply, type BrandForTracking, type OpportunityForTracking } from '@/lib/tracked-reply'
 import { recordPostOutcome } from '@/lib/learning'
+import { evaluatePosting, type PolicyBrand } from '@/lib/posting-policy'
 
 type Opportunity = {
   id: string
@@ -12,6 +13,7 @@ type Opportunity = {
   title: string | null
   body: string | null
   subreddit: string | null
+  source_published_at: string | null
   drafted_reply: string
   tracked_code: string | null
 }
@@ -77,20 +79,38 @@ export async function POST(req: NextRequest) {
   // Load the opportunity
   const { data: opp } = await supabase
     .from('opportunities')
-    .select('id, brand_id, platform, thread_url, title, body, subreddit, drafted_reply, tracked_code')
+    .select('id, brand_id, platform, thread_url, title, body, subreddit, source_published_at, drafted_reply, tracked_code')
     .eq('id', opportunityId)
     .single()
 
   if (!opp) return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 })
   const opportunity = opp as Opportunity
 
-  // Tag the link so this reply is attributable, reusing the code if Copy already
-  // minted one — otherwise the same thread would report under two identities.
   const { data: brand } = await supabase
     .from('brands')
-    .select('id, name, url')
+    .select('id, name, url, user_id, subreddits, max_posts_per_day, subreddit_cooldown_days')
     .eq('id', opportunity.brand_id)
     .single()
+
+  // The governor runs before anything is sent. A Reddit ban is permanent, so the
+  // server refuses rather than trusting the client to have hidden the button.
+  if (brand) {
+    const verdict = await evaluatePosting(supabase, brand as PolicyBrand, {
+      id: opportunity.id,
+      platform: opportunity.platform,
+      subreddit: opportunity.subreddit,
+      source_published_at: opportunity.source_published_at,
+    })
+    if (verdict.decision === 'block') {
+      return NextResponse.json({
+        error: verdict.reasons.filter(r => r.severity === 'block').map(r => r.message).join(' '),
+        policy: verdict,
+      }, { status: 409 })
+    }
+  }
+
+  // Tag the link so this reply is attributable, reusing the code if Copy already
+  // minted one — otherwise the same thread would report under two identities.
 
   let outgoingText = replyText
   if (brand) {

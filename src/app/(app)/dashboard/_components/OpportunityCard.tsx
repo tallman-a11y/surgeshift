@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react'
+import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2, ShieldAlert } from 'lucide-react'
+import type { PolicyVerdict } from '@/lib/posting-policy'
 import { scoreColor, scoreBg, scoreBorder, timeAgo, threadAge, truncate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -23,9 +24,11 @@ type Opportunity = {
 
 export default function OpportunityCard({
   opp,
+  verdict,
   onStatusChange,
 }: {
   opp: Opportunity
+  verdict?: PolicyVerdict
   onStatusChange: (id: string, status: string, dbAlreadyUpdated?: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -35,8 +38,12 @@ export default function OpportunityCard({
   const [postError, setPostError] = useState<string | null>(null)
 
   const age = threadAge(opp.source_published_at, opp.platform)
-  // Reddit rejects replies on archived posts outright, so do not offer a one-click post.
-  const canAutoPost = (opp.platform === 'reddit' || opp.platform === 'youtube') && !(opp.platform === 'reddit' && age.tone === 'dead')
+  const blocked = verdict?.decision === 'block'
+  // Reddit rejects replies on archived posts outright, and the governor blocks
+  // anything that risks the account — never offer one-click posting for either.
+  const canAutoPost = (opp.platform === 'reddit' || opp.platform === 'youtube')
+    && !(opp.platform === 'reddit' && age.tone === 'dead')
+    && !blocked
   const platformLabel = opp.platform === 'twitter' ? 'X/Twitter' : opp.platform
 
   async function handleCopy() {
@@ -152,6 +159,22 @@ export default function OpportunityCard({
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Posting governor — a ban is permanent, so the reason is stated plainly
+          on the card rather than left for the server to refuse. */}
+      {verdict && verdict.reasons.length > 0 && (
+        <div
+          className="mx-4 mb-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2"
+          style={blocked
+            ? { background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }
+            : { background: 'rgba(234,179,8,0.08)', color: '#eab308', border: '1px solid rgba(234,179,8,0.25)' }}
+        >
+          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-1">
+            {verdict.reasons.map(r => <span key={r.code}>{r.message}</span>)}
+          </div>
         </div>
       )}
 
