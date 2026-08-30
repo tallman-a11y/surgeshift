@@ -28,7 +28,10 @@ function extractYouTubeIds(url: string): { videoId: string | null; commentId: st
   return { videoId, commentId }
 }
 
-async function postToReddit(token: string, postId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+/** Identifies the comment we created, so its outcome can be followed up later. */
+type PostResult = { ok: boolean; error?: string; commentId?: string; permalink?: string }
+
+async function postToReddit(token: string, postId: string, text: string): Promise<PostResult> {
   const res = await fetch('https://oauth.reddit.com/api/comment', {
     method: 'POST',
     headers: {
@@ -36,16 +39,24 @@ async function postToReddit(token: string, postId: string, text: string): Promis
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': 'SurgeShift/1.0',
     },
-    body: new URLSearchParams({ thing_id: `t3_${postId}`, text }),
+    body: new URLSearchParams({ thing_id: `t3_${postId}`, text, api_type: 'json' }),
   })
-  type RedditCommentResponse = { json?: { errors?: string[][] } }
+  type RedditThing = { data?: { name?: string; id?: string; permalink?: string } }
+  type RedditCommentResponse = { json?: { errors?: string[][]; data?: { things?: RedditThing[] } } }
   const data = await res.json() as RedditCommentResponse
   const errors = data.json?.errors ?? []
   if (!res.ok || errors.length > 0) return { ok: false, error: errors[0]?.join(' ') ?? `HTTP ${res.status}` }
-  return { ok: true }
+
+  const thing = data.json?.data?.things?.[0]?.data
+  return {
+    ok: true,
+    // `name` is the fullname (t1_abc123) the info endpoint wants.
+    commentId: thing?.name ?? (thing?.id ? `t1_${thing.id}` : undefined),
+    permalink: thing?.permalink ? `https://www.reddit.com${thing.permalink}` : undefined,
+  }
 }
 
-async function postToYouTube(token: string, videoId: string, commentId: string | null, text: string): Promise<{ ok: boolean; error?: string }> {
+async function postToYouTube(token: string, videoId: string, commentId: string | null, text: string): Promise<PostResult> {
   // Reply to an existing comment, or post a new top-level comment on the video
   if (commentId) {
     const res = await fetch('https://www.googleapis.com/youtube/v3/comments?part=snippet', {
@@ -54,7 +65,12 @@ async function postToYouTube(token: string, videoId: string, commentId: string |
       body: JSON.stringify({ snippet: { parentId: commentId, textOriginal: text } }),
     })
     if (!res.ok) { const e = await res.json() as { error?: { message?: string } }; return { ok: false, error: e.error?.message } }
-    return { ok: true }
+    const created = await res.json() as { id?: string }
+    return {
+      ok: true,
+      commentId: created.id,
+      permalink: created.id ? `https://www.youtube.com/watch?v=${videoId}&lc=${created.id}` : undefined,
+    }
   } else {
     const res = await fetch('https://www.googleapis.com/youtube/v3/commentThreads?part=snippet', {
       method: 'POST',
@@ -62,7 +78,14 @@ async function postToYouTube(token: string, videoId: string, commentId: string |
       body: JSON.stringify({ snippet: { videoId, topLevelComment: { snippet: { textOriginal: text } } } }),
     })
     if (!res.ok) { const e = await res.json() as { error?: { message?: string } }; return { ok: false, error: e.error?.message } }
-    return { ok: true }
+    const created = await res.json() as { id?: string; snippet?: { topLevelComment?: { id?: string } } }
+    // For a thread the comment we care about is the top-level comment inside it.
+    const id = created.snippet?.topLevelComment?.id ?? created.id
+    return {
+      ok: true,
+      commentId: id,
+      permalink: id ? `https://www.youtube.com/watch?v=${videoId}&lc=${id}` : undefined,
+    }
   }
 }
 
@@ -146,7 +169,7 @@ export async function POST(req: NextRequest) {
     const message = err instanceof TokenRefreshError ? err.message : 'Could not refresh the platform token.'
     return NextResponse.json({ error: message }, { status: 502 })
   }
-  let result: { ok: boolean; error?: string }
+  let result: PostResult
 
   if (opportunity.platform === 'reddit') {
     const postId = extractRedditPostId(opportunity.thread_url)
@@ -168,6 +191,9 @@ export async function POST(req: NextRequest) {
     status: 'posted',
     posted_at: new Date().toISOString(),
     posted_reply_text: outgoingText,
+    // Remember which comment is ours, or its outcome can never be followed up.
+    posted_comment_id: result.commentId ?? null,
+    posted_permalink: result.permalink ?? null,
   }).eq('id', opportunityId)
 
   const signal = await recordPostOutcome(supabase, {

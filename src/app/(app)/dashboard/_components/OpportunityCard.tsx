@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2, ShieldAlert } from 'lucide-react'
+import { ExternalLink, Copy, CheckCheck, ThumbsDown, ChevronDown, ChevronUp, Send, Loader2, ShieldAlert, Activity } from 'lucide-react'
 import type { PolicyVerdict } from '@/lib/posting-policy'
 import { scoreColor, scoreBg, scoreBorder, timeAgo, threadAge, truncate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,11 @@ type Opportunity = {
   status: string
   found_at: string
   source_published_at?: string | null
+  posted_permalink?: string | null
+  reply_score?: number | null
+  reply_count?: number | null
+  reply_removed?: boolean | null
+  reply_checked_at?: string | null
 }
 
 export default function OpportunityCard({
@@ -158,6 +163,37 @@ export default function OpportunityCard({
                 style={{ background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '0.8rem' }}
               />
             </div>
+          )}
+        </div>
+      )}
+
+      {/* What actually happened to the reply. A removal is the loudest signal a
+          community gives, so it is stated first and plainly. */}
+      {opp.status === 'posted' && opp.reply_checked_at && (
+        <div
+          className="mx-4 mb-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2 flex-wrap"
+          style={opp.reply_removed
+            ? { background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }
+            : { background: 'var(--color-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
+        >
+          <Activity size={12} className="shrink-0" />
+          {opp.reply_removed ? (
+            <span>Removed by the community or a moderator — worth understanding why before replying like this again.</span>
+          ) : (
+            <>
+              <span style={{ color: 'var(--color-text)' }}>
+                {opp.reply_score ?? 0} {opp.platform === 'reddit' ? 'upvotes' : 'likes'}
+              </span>
+              {typeof opp.reply_count === 'number' && opp.reply_count > 0 && (
+                <span>· {opp.reply_count} {opp.reply_count === 1 ? 'reply' : 'replies'}</span>
+              )}
+              <span>· checked {timeAgo(opp.reply_checked_at)}</span>
+            </>
+          )}
+          {opp.posted_permalink && (
+            <a href={opp.posted_permalink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>
+              See your reply
+            </a>
           )}
         </div>
       )}
