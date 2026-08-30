@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { Zap, Sparkles, Briefcase, Settings, LogOut, ScanSearch, TrendingUp, Menu, X } from 'lucide-react'
+import { Zap, Sparkles, Briefcase, Settings, LogOut, ScanSearch, TrendingUp, BarChart3, Menu, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/lib/supabase/auth-actions'
 import type { User } from '@supabase/supabase-js'
@@ -13,6 +13,7 @@ const NAV = [
   { label: 'Shift', href: '/app', icon: Sparkles },
   { label: 'Opportunities', href: '/dashboard', icon: TrendingUp },
   { label: 'Brands', href: '/brands', icon: Briefcase },
+  { label: 'Performance', href: '/performance', icon: BarChart3 },
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
