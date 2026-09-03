@@ -49,6 +49,10 @@ export default function OpportunityFeed({
 
     if (filter !== 'all') {
       query = query.eq('status', filter)
+    } else {
+      // "All" means everything you might still act on. Archived rows are
+      // housekeeping — 398 dead pre-freshness threads would bury the tab.
+      query = query.neq('status', 'archived')
     }
 
     const { data } = await query
