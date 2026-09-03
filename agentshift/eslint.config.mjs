@@ -12,9 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // AgentShift is a self-contained app with its own eslint config and its own
-    // @/* alias. Linting it from here resolves imports against the wrong project.
-    "agentshift/**",
   ]),
 ]);
 
