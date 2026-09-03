@@ -245,13 +245,13 @@ export const SHIFT_TOOLS: Anthropic.Tool[] = [
   {
     name: 'hand_off_to_family',
     description:
-      'Hand work across to another Shift product the agent already uses: a buyer who needs financing goes to LendShift as a pre-approval lead; a listing going live goes to SurgeShift for the campaign; a homeowner thinking about selling goes to SurgeShift to nurture. Use this instead of telling the agent to go and do something in another tool. It moves the agent\'s own data between the agent\'s own products — but only ever when they have asked for it, and only to a product they have connected.',
+      'Hand work across to another Shift product the agent already uses: a buyer who needs financing goes to LendShift as a pre-approval lead; a listing going live goes to SurgeShift for the campaign; a homeowner thinking about selling goes to SurgeShift to nurture; a client buying as an investment goes to RealShift for deal analysis. Use this instead of telling the agent to go and do something in another tool. It moves the agent\'s own data between the agent\'s own products — but only ever when they have asked for it, and only to a product they have connected.',
     input_schema: {
       type: 'object' as const,
       properties: {
         handoff: {
           type: 'string',
-          enum: ['lender_referral', 'listing_live', 'client_closed', 'seller_lead'],
+          enum: ['lender_referral', 'listing_live', 'client_closed', 'seller_lead', 'investor_referral'],
           description: 'What is being handed across',
         },
         contact_id: { type: 'string' },

@@ -60,9 +60,25 @@ and `/api/shift/family` reports which are actually live.
 
 **The context graph is ours.** `@allshift/core` has declared the `ContextGraph`
 interface since 0.4 but no product had implemented it, so every product was
-constructing `NoOpContextGraph` and every handoff silently went nowhere.
+constructing `NoOpContextGraph` and that interface carried nothing.
 `src/lib/shift/context-graph.ts` is the first real implementation — if you port it to
-LendShift or SurgeShift, port the tests with it.
+RealShift or LendShift, port the tests with it.
+
+**This is not the only handoff mechanism, and it is not the one carrying traffic.**
+RealShift and LendShift already interoperate over a signed HTTP pipe —
+`POST /api/partner/referral`, shared `PARTNER_SECRET`, HMAC over the raw body — which
+predates the context graph and works today. `src/lib/shift/partner.ts` speaks it, and
+`partner.test.ts` round-trips a signed body against the way RealShift verifies it.
+
+Which to use:
+
+- **Partner pipe** — a person moving between products (a buyer who needs a lender, a
+  borrower who needs an agent). Real-time, lands in the receiving product's inbox.
+- **Context graph** — ambient context about a shared user that the sibling should know
+  next time it speaks to them. Queued, consumed on their next turn.
+
+`hand_off_to_family` does both: the bus row is the durable record, the pipe is the
+live delivery, and the tool reports which of the two actually happened.
 
 ### The bus is only cross-product when it is shared
 

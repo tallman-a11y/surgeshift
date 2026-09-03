@@ -45,7 +45,13 @@ All four layers of `@allshift/core` are wired in:
 
 The context graph is the piece that did not exist anywhere in the family before —
 the interface had been declared since core 0.4, but every product was falling back to
-`NoOpContextGraph`, so handoffs silently went nowhere.
+`NoOpContextGraph`, so that interface carried nothing.
+
+Alongside it, AgentShift speaks the family's **existing** referral protocol: a signed
+`POST /api/partner/referral` with a shared `PARTNER_SECRET`, wire-compatible with
+RealShift and LendShift, inbound and outbound. That pipe already worked between those
+two; it is how a handoff reaches a real inbox today. The context graph carries the
+ambient context; the pipe carries the person.
 
 **It is only genuinely cross-product when it is shared.** Each product has its own
 Supabase project, so migration `003_shift_family.sql` belongs in one shared family
@@ -87,7 +93,7 @@ Apply `supabase/migrations/` in order. `001` is the Shift memory spine (needs th
 table keyed to the owning agent.
 
 ```bash
-npm test        # 227 unit tests over the domain logic and the family wiring
+npm test        # 252 unit tests over the domain logic and the family wiring
 npm run lint
 npm run typecheck
 npm run build

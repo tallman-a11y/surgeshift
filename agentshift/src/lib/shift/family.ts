@@ -5,7 +5,7 @@ import { SupabaseContextGraph } from './context-graph'
 export const PRODUCT = 'agentshift'
 
 /** The sibling products AgentShift knows how to hand work to. */
-export const FAMILY_PRODUCTS = ['lendshift', 'surgeshift', 'redshift'] as const
+export const FAMILY_PRODUCTS = ['realshift', 'lendshift', 'surgeshift'] as const
 export type FamilyProduct = (typeof FAMILY_PRODUCTS)[number]
 
 export function hasLocalSupabase(): boolean {
@@ -73,6 +73,10 @@ export const HANDOFF_TYPES = {
   seller_lead: {
     target: 'surgeshift' as const,
     what: 'A homeowner thinking about selling. SurgeShift can nurture them.',
+  },
+  investor_referral: {
+    target: 'realshift' as const,
+    what: 'A client buying as an investment. RealShift runs the deal analysis and rent ledger.',
   },
 } as const
 

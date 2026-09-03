@@ -20,6 +20,7 @@ import { dailySphereCalls, type SphereContact, type RelationshipTier, type LifeE
 import { usd, usdShort, round } from '@/lib/money'
 import { artifactId, type Artifact, type ListingCard, type ContentVariant, type PipelineCard } from '@/lib/artifacts'
 import { HANDOFF_TYPES, familyBusIsShared, PRODUCT, type HandoffType } from '@/lib/shift/family'
+import { sendPartnerReferral, partnerReferralUrl } from '@/lib/shift/partner'
 import { commissionPlan, marketContext, num, str, type ToolContext, type ToolOutcome } from './context'
 
 type Input = Record<string, unknown>
@@ -1088,6 +1089,30 @@ async function handOffToFamily(input: Input, ctx: ToolContext): Promise<ToolOutc
     return { summary: `Handoff NOT sent. ${result.refused} Say this plainly rather than implying it went through.` }
   }
 
+  // The bus row is the durable record; the partner pipe is the live delivery. This
+  // is the protocol RealShift and LendShift already speak, so a referral lands in a
+  // real inbox on the other side rather than only queueing here.
+  let delivery: string
+  if (partnerReferralUrl(spec.target)) {
+    const sent = await sendPartnerReferral(spec.target, {
+      borrower_name: contactName || 'Referred contact',
+      email: (contact?.email as string) ?? null,
+      phone: (contact?.phone as string) ?? null,
+      property_address: str(input.property_address) || null,
+      loan_amount: (contact?.budget_max as number) ?? null,
+      notes: str(input.note) || spec.what,
+      referring_agent: ctx.agent?.full_name ?? null,
+      assigned_agent_email: null,
+    })
+    delivery = sent.sent
+      ? `Delivered to ${spec.target} over the partner pipe.`
+      : `NOT delivered to ${spec.target}: ${sent.reason} The handoff is recorded here but has not reached them — say so.`
+  } else {
+    delivery = familyBusIsShared()
+      ? `${spec.target} will pick it up from the shared bus on their next session.`
+      : `Queued on AgentShift's own bus only — ${spec.target} has no referral endpoint configured and the shared family project is not set, so they cannot see it yet. Tell the agent that.`
+  }
+
   // Log it as a touch, so the sphere ranking knows this person was worked.
   if (contactId) {
     void ctx.supabase.from('contact_events').insert({
@@ -1096,12 +1121,8 @@ async function handOffToFamily(input: Input, ctx: ToolContext): Promise<ToolOutc
     }).then(() => {}, () => {})
   }
 
-  const scope = familyBusIsShared()
-    ? `${spec.target} will pick it up on their next session.`
-    : `Note: the shared family project is not configured, so this is queued on AgentShift's own bus and ${spec.target} cannot see it yet. Tell the agent that.`
-
   return {
-    summary: `Sent ${kind} to ${spec.target}${contactName ? ` for ${contactName}` : ''}. ${spec.what} ${scope}`,
+    summary: `Recorded ${kind} for ${spec.target}${contactName ? ` (${contactName})` : ''}. ${spec.what} ${delivery}`,
     artifacts: [{
       kind: 'checklist',
       id: artifactId('handoff'),
@@ -1109,7 +1130,7 @@ async function handOffToFamily(input: Input, ctx: ToolContext): Promise<ToolOutc
       subtitle: contactName || spec.what,
       items: [
         { label: spec.what, done: true },
-        { label: familyBusIsShared() ? `${spec.target} will pick this up on their next session` : `Queued locally — ${spec.target} is not connected to the shared family project yet`, done: familyBusIsShared() },
+        { label: delivery, done: delivery.startsWith('Delivered') },
         { label: 'Nothing was sent to the client. This moved between your own tools.', done: true },
       ],
     }],
