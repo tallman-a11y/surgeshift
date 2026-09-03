@@ -9,7 +9,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "catchup": "node scripts/shiftlog.mjs catchup",
+    "handoff": "node scripts/shiftlog.mjs handoff",
+    "shiftlog": "node scripts/shiftlog.mjs",
+    "hooks": "bash scripts/install-hooks.sh"
   },
   "dependencies": {
     "@allshift/core": "^0.4.0",

@@ -243,6 +243,32 @@ export const SHIFT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'hand_off_to_family',
+    description:
+      'Hand work across to another Shift product the agent already uses: a buyer who needs financing goes to LendShift as a pre-approval lead; a listing going live goes to SurgeShift for the campaign; a homeowner thinking about selling goes to SurgeShift to nurture. Use this instead of telling the agent to go and do something in another tool. It moves the agent\'s own data between the agent\'s own products — but only ever when they have asked for it, and only to a product they have connected.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        handoff: {
+          type: 'string',
+          enum: ['lender_referral', 'listing_live', 'client_closed', 'seller_lead'],
+          description: 'What is being handed across',
+        },
+        contact_id: { type: 'string' },
+        contact_name: { type: 'string', description: 'Used when no contact_id is known' },
+        note: { type: 'string', description: 'Context the receiving product should have' },
+        property_address: { type: 'string' },
+      },
+      required: ['handoff'],
+    },
+  },
+  {
+    name: 'family_status',
+    description:
+      'Which parts of the Shift family are actually connected for this agent — memory, learning, collective intelligence, and the cross-product bus to LendShift and SurgeShift — plus anything sitting in their cross-product inbox. Use when the agent asks what is connected, why a handoff did not go through, or what Shift remembers.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
     name: 'production_report',
     description: 'Closed production: volume, sides, gross commission, net after splits, average sale price and days on market, plus which lead sources actually produced. Use for "how did I do", "my numbers", "which sources work".',
     input_schema: {
@@ -273,4 +299,6 @@ export const TOOL_LABELS: Record<string, string> = {
   create_contact: 'Adding contact',
   log_touch: 'Logging the touch',
   production_report: 'Pulling production numbers',
+  hand_off_to_family: 'Handing across to the family',
+  family_status: 'Checking family connections',
 }

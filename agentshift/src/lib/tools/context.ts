@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Artifact } from '@/lib/artifacts'
 import type { CommissionPlan } from '@/lib/commission'
 import type { MarketContext } from '@/lib/cma'
+import type { SupabaseContextGraph } from '@/lib/shift/context-graph'
 
 /** The agent profile row, narrowed to what the tools actually read. */
 export type AgentProfile = {
@@ -23,6 +24,14 @@ export type AgentProfile = {
   disclosure_line: string | null
 }
 
+export type LayerStatus = {
+  memory: boolean
+  learning: boolean
+  genome: boolean
+  contextGraph: boolean
+  embedding: boolean
+}
+
 export type ToolContext = {
   supabase: SupabaseClient
   agentId: string
@@ -30,6 +39,10 @@ export type ToolContext = {
   /** Injected so the copywriting tool can call the model without a circular import. */
   generate: (system: string, prompt: string, maxTokens?: number) => Promise<string>
   now: Date
+  /** The family bus, when one is configured. Null means handoffs cannot be sent. */
+  contextGraph: SupabaseContextGraph | null
+  /** Which brain layers actually came up, so tools can report the truth. */
+  layerStatus: LayerStatus
 }
 
 /**

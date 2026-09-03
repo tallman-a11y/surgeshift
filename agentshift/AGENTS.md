@@ -45,6 +45,48 @@ nothing else:
 - **Nothing is sent on the agent's behalf.** Shift drafts and checks; the agent sends.
 - **Fair housing runs on every generated word** before the agent sees it.
 
+## The Shift family environment
+
+AgentShift is wired into all four layers of the shared brain (`@allshift/core`).
+`buildLayers()` in `src/lib/shift-brain.ts` constructs them; each degrades on its own,
+and `/api/shift/family` reports which are actually live.
+
+| Layer | Store | Tables | Degrades to |
+| --- | --- | --- | --- |
+| Memory | `SupabaseMemoryStore` | `shift_memory` | no cross-session recall |
+| Learning | `SupabaseLearningStore` | `shift_feedback`, `shift_learning_outcomes` | no derived preferences |
+| Genome | `SupabaseGenomeStore` | `shift_collective_patterns` + corpus | `NoOpGenomeStore` |
+| Context | `SupabaseContextGraph` | `shift_cross_product_events`, `shift_identities` | `NoOpContextGraph` |
+
+**The context graph is ours.** `@allshift/core` has declared the `ContextGraph`
+interface since 0.4 but no product had implemented it, so every product was
+constructing `NoOpContextGraph` and every handoff silently went nowhere.
+`src/lib/shift/context-graph.ts` is the first real implementation — if you port it to
+LendShift or SurgeShift, port the tests with it.
+
+### The bus is only cross-product when it is shared
+
+Each product has its own Supabase project, so a bus written into this project is
+invisible to the others. Migration `003_shift_family.sql` belongs in **one shared
+family project** that every product points at via `SHIFT_FAMILY_SUPABASE_URL` /
+`SHIFT_FAMILY_SUPABASE_SERVICE_KEY`.
+
+Unset, it falls back to product-local: publish and consume work, identities resolve,
+nothing throws — but siblings cannot read the events. **Never let the UI or the model
+claim a handoff arrived when `familyBusIsShared()` is false.** The tool summaries and
+the system prompt both say so explicitly; keep it that way.
+
+### Rules for cross-product work
+
+- Events are addressed to the **global** user id from `shift_identities`, never a
+  product-local one. Use `publishFor()`, which resolves identity for you.
+- **Consent is enforced in `publishFor()`, not in the caller** — a consent check the
+  caller has to remember is one that gets forgotten.
+- A referral carries a client's details. `hand_off_to_family` refuses when the contact
+  has no recorded written contact consent. Do not add a bypass.
+- Events are marked consumed **after** a turn succeeds. Consuming on read means a
+  failed turn silently swallows a lender's message.
+
 ## Shift agent coordination — parking lot + local↔prod reconcile
 
 This repo is part of the **central Shift parking lot**: a shared cross-product timeline
@@ -54,6 +96,13 @@ of what every agent does, so any agent can pick up where another left off.
 - **Stopping / handing off** → `/handoff` (logs a resume_point to the shared timeline). Commits & deploys auto-log.
 - **"pickup <product>"** resumes from the parking lot first, then the resume memory.
 - Helper if a skill isn't available: `node ~/.claude/shift-parking-lot/shiftlog.mjs catchup|log|resolve`.
+- **From this repo:** `npm run catchup`, `npm run handoff "<resume point>"`. These go
+  through `scripts/shiftlog.mjs`, which forwards to the shared helper and tags every
+  entry with `--product agentshift`. When the helper is not installed it prints a note
+  and **exits 0** — it runs from a git hook, and a missing optional tool must never
+  block a commit.
+- `npm run hooks` installs the post-commit hook that auto-logs commits. Opt-in on
+  purpose: a repo that installs git hooks behind your back is one you stop trusting.
 
 **Reconcile local ↔ prod — adopt the MOST advanced/current side, whichever it is.** The
 newest work can be on either side: local may be **behind** `origin` (another agent/machine

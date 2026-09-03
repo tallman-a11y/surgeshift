@@ -10,16 +10,12 @@
 
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import {
-  VoyageEmbeddingProvider,
-  retrieveRelevantMemories,
-  recordMemory,
-  formatMemoriesForPrompt,
-} from '@allshift/core'
+import { recordMemory } from '@allshift/core'
 import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { SupabaseMemoryStore } from '@/lib/supabase-memory-store'
-import { agentShiftPersona } from '@/lib/shift-brain'
+import { agentShiftPersona, buildLayers } from '@/lib/shift-brain'
+import { buildFamilyContext, consumeEvents } from '@/lib/shift/context'
+import { SupabaseContextGraph } from '@/lib/shift/context-graph'
+import { familyBusIsShared } from '@/lib/shift/family'
 import { SHIFT_TOOLS, TOOL_LABELS } from '@/lib/tools/schema'
 import { runTool } from '@/lib/tools/run'
 import type { AgentProfile, ToolContext } from '@/lib/tools/context'
@@ -32,7 +28,10 @@ const MODEL = 'claude-sonnet-4-6'
 const MAX_ITERATIONS = 8
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const embedding = new VoyageEmbeddingProvider(process.env.VOYAGE_API_KEY)
+
+// One brain wiring for the process: memory, learning, genome and the cross-product
+// bus, each degrading independently when its backing service is absent.
+const layers = buildLayers()
 
 type ClientMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -50,6 +49,16 @@ function buildSystemPrompt(agent: AgentProfile | null, today: string): string {
     )
     return lines.join('\n')
   }
+
+  // The model must never imply a handoff reached a sibling when the bus is only
+  // product-local, so tell it plainly which mode it is running in.
+  lines.push(
+    '',
+    '## The family',
+    familyBusIsShared()
+      ? 'The cross-product bus is connected to the shared family project. Handoffs to LendShift and SurgeShift reach them.'
+      : 'The cross-product bus is running product-locally: handoffs are queued but the sibling products cannot read them yet. If you hand something across, say that plainly rather than implying it arrived.',
+  )
 
   lines.push(
     '',
@@ -83,33 +92,26 @@ export async function POST(req: NextRequest) {
   const now = new Date()
   const today = now.toISOString().slice(0, 10)
 
-  // Memory is best-effort: a Voyage or Supabase hiccup must not cost the agent their
-  // answer, so a failure here degrades to a conversation without recall.
   const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
-  let memoryBlock = ''
-  const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-  const memoryStore = hasServiceRole ? new SupabaseMemoryStore(createServiceClient()) : null
-  if (memoryStore) {
-    try {
-      const memories = await retrieveRelevantMemories(memoryStore, embedding, {
-        userId: user.id,
-        query: lastUserMessage || 'real estate business overview',
-        limit: 10,
-        threshold: 0.25,
-      })
-      memoryBlock = formatMemoriesForPrompt(memories, agentShiftPersona.domain)
-    } catch {
-      memoryBlock = ''
-    }
-  }
 
-  const systemPrompt = buildSystemPrompt(agent, today) + (memoryBlock ? `\n\n${memoryBlock}` : '')
+  // Everything the family knows about this agent: memory, their derived preferences,
+  // collective patterns distilled across the products, and the cross-product inbox.
+  // Each source fails independently — losing recall must never cost the answer.
+  const family = await buildFamilyContext({
+    layers,
+    userId: user.id,
+    query: lastUserMessage || 'real estate business overview',
+  })
+
+  const systemPrompt = buildSystemPrompt(agent, today) + (family.block ? `\n\n${family.block}` : '')
 
   const ctx: ToolContext = {
     supabase,
     agentId: user.id,
     agent,
     now,
+    contextGraph: layers.contextGraph instanceof SupabaseContextGraph ? layers.contextGraph : null,
+    layerStatus: layers.status,
     generate: async (system, prompt, maxTokens = 2000) => {
       const msg = await anthropic.messages.create({
         model: MODEL,
@@ -198,8 +200,8 @@ export async function POST(req: NextRequest) {
           claudeMessages.push({ role: 'user', content: toolResults })
         }
 
-        if (memoryStore && lastUserMessage && assistantText) {
-          void recordMemory(memoryStore, embedding, {
+        if (layers.memory && lastUserMessage && assistantText) {
+          void recordMemory(layers.memory, layers.embedding, {
             userId: user.id,
             content: `Agent: ${lastUserMessage.slice(0, 300)}\nShift: ${assistantText.slice(0, 500)}`,
             type: 'context',
@@ -208,6 +210,11 @@ export async function POST(req: NextRequest) {
             salience: 0.4,
           }).catch(() => {})
         }
+
+        // Only now are the sibling products' events marked consumed. Doing it when
+        // they were read would mean a failed turn silently swallows a lender's
+        // message and the agent never hears their buyer was approved.
+        if (assistantText) void consumeEvents(layers, family.consumedEventIds)
 
         send({ type: 'done' })
       } catch (err) {

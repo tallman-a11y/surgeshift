@@ -19,6 +19,7 @@ import { triageQueue, type LeadIntent, type LeadSource } from '@/lib/lead-scorin
 import { dailySphereCalls, type SphereContact, type RelationshipTier, type LifeEvent } from '@/lib/sphere'
 import { usd, usdShort, round } from '@/lib/money'
 import { artifactId, type Artifact, type ListingCard, type ContentVariant, type PipelineCard } from '@/lib/artifacts'
+import { HANDOFF_TYPES, familyBusIsShared, PRODUCT, type HandoffType } from '@/lib/shift/family'
 import { commissionPlan, marketContext, num, str, type ToolContext, type ToolOutcome } from './context'
 
 type Input = Record<string, unknown>
@@ -43,6 +44,8 @@ export async function runTool(name: string, input: Input, ctx: ToolContext): Pro
     case 'create_contact':       return createContact(input, ctx)
     case 'log_touch':            return logTouch(input, ctx)
     case 'production_report':    return productionReport(input, ctx)
+    case 'hand_off_to_family':   return handOffToFamily(input, ctx)
+    case 'family_status':        return familyStatus(ctx)
     default:                     return { summary: `Unknown tool: ${name}` }
   }
 }
@@ -1014,6 +1017,149 @@ async function productionReport(input: Input, ctx: ToolContext): Promise<ToolOut
       ],
       breakdown: breakdown.length > 0 ? breakdown : undefined,
       breakdownTitle: 'Volume by lead source',
+    }],
+  }
+}
+
+// ── The family ──────────────────────────────────────────────────────────────────
+
+async function handOffToFamily(input: Input, ctx: ToolContext): Promise<ToolOutcome> {
+  const kind = str(input.handoff) as HandoffType
+  const spec = HANDOFF_TYPES[kind]
+  if (!spec) return { summary: `Unknown handoff type "${str(input.handoff)}".` }
+
+  const graph = ctx.contextGraph
+  if (!graph) {
+    return {
+      summary:
+        'The cross-product bus is not configured, so nothing was sent. Tell the agent the handoff could not go through rather than implying it did.',
+    }
+  }
+
+  // Resolve the person, so the receiving product gets a name and not just an id.
+  let contactId = input.contact_id ? str(input.contact_id) : null
+  let contactName = str(input.contact_name)
+  if (!contactId && contactName) {
+    const { data } = await ctx.supabase.from('contacts').select('id, full_name, email, phone')
+      .eq('agent_id', ctx.agentId).ilike('full_name', `%${contactName}%`).limit(1).maybeSingle()
+    if (data) { contactId = str(data.id); contactName = str(data.full_name) }
+  }
+
+  let contact: Record<string, unknown> | null = null
+  if (contactId) {
+    const { data } = await ctx.supabase.from('contacts')
+      .select('full_name, email, phone, timeline_months, pre_approved, budget_min, budget_max, contact_consent')
+      .eq('agent_id', ctx.agentId).eq('id', contactId).maybeSingle()
+    contact = (data as Record<string, unknown>) ?? null
+    if (contact) contactName = str(contact.full_name, contactName)
+  }
+
+  // A referral carries a client's details to another product. Without recorded
+  // consent to be contacted, that is not the agent's to send — and the receiving
+  // product cannot legally act on it either.
+  if (contact && !contact.contact_consent) {
+    return {
+      summary:
+        `${contactName} has no recorded written contact consent, so the handoff was NOT sent. ` +
+        'Tell the agent plainly: capture consent first, then this goes through. Do not offer a workaround.',
+    }
+  }
+
+  const result = await graph.publishFor({
+    localUserId: ctx.agentId,
+    eventType: kind,
+    targetProduct: spec.target,
+    payload: {
+      contactName: contactName || undefined,
+      contactId: contactId ?? undefined,
+      email: contact?.email ?? undefined,
+      phone: contact?.phone ?? undefined,
+      timelineMonths: contact?.timeline_months ?? undefined,
+      preApproved: contact?.pre_approved ?? undefined,
+      budgetMin: contact?.budget_min ?? undefined,
+      budgetMax: contact?.budget_max ?? undefined,
+      propertyAddress: str(input.property_address) || undefined,
+      note: str(input.note) || undefined,
+      fromProduct: PRODUCT,
+    },
+  })
+
+  if ('refused' in result) {
+    return { summary: `Handoff NOT sent. ${result.refused} Say this plainly rather than implying it went through.` }
+  }
+
+  // Log it as a touch, so the sphere ranking knows this person was worked.
+  if (contactId) {
+    void ctx.supabase.from('contact_events').insert({
+      agent_id: ctx.agentId, contact_id: contactId, kind: 'note', by_shift: true,
+      body: `Handed to ${spec.target}: ${spec.what}`, occurred_at: ctx.now.toISOString(),
+    }).then(() => {}, () => {})
+  }
+
+  const scope = familyBusIsShared()
+    ? `${spec.target} will pick it up on their next session.`
+    : `Note: the shared family project is not configured, so this is queued on AgentShift's own bus and ${spec.target} cannot see it yet. Tell the agent that.`
+
+  return {
+    summary: `Sent ${kind} to ${spec.target}${contactName ? ` for ${contactName}` : ''}. ${spec.what} ${scope}`,
+    artifacts: [{
+      kind: 'checklist',
+      id: artifactId('handoff'),
+      title: `Handed to ${spec.target}`,
+      subtitle: contactName || spec.what,
+      items: [
+        { label: spec.what, done: true },
+        { label: familyBusIsShared() ? `${spec.target} will pick this up on their next session` : `Queued locally — ${spec.target} is not connected to the shared family project yet`, done: familyBusIsShared() },
+        { label: 'Nothing was sent to the client. This moved between your own tools.', done: true },
+      ],
+    }],
+  }
+}
+
+async function familyStatus(ctx: ToolContext): Promise<ToolOutcome> {
+  const s = ctx.layerStatus
+  const graph = ctx.contextGraph
+  const pending = graph ? await graph.pendingFor(ctx.agentId).catch(() => []) : []
+
+  const lines = [
+    `Memory (cross-session recall): ${s.memory ? 'connected' : 'not configured'}`,
+    `Learning (accept/edit/reject signals): ${s.learning ? 'connected' : 'not configured'}`,
+    `Collective intelligence (patterns across the family): ${s.genome ? 'connected' : 'not configured'}`,
+    `Semantic embeddings: ${s.embedding ? 'connected' : 'no Voyage key — recall falls back to recency'}`,
+    `Cross-product bus: ${
+      !s.contextGraph ? 'not configured'
+      : familyBusIsShared() ? 'connected to the shared family project'
+      : 'running product-locally — siblings cannot see handoffs until SHIFT_FAMILY_SUPABASE_URL is set'
+    }`,
+    `Cross-product inbox: ${pending.length} pending event(s)${
+      pending.length > 0 ? ` — ${pending.map(e => `${e.eventType} from ${e.sourceProduct}`).join(', ')}` : ''
+    }`,
+  ]
+
+  return {
+    summary: lines.join('\n') + '\nReport this accurately; do not describe a layer as connected when it is not.',
+    artifacts: [{
+      kind: 'checklist',
+      id: artifactId('family'),
+      title: 'Shift family connections',
+      subtitle: familyBusIsShared() ? 'Shared family project' : 'Product-local',
+      items: [
+        { label: 'Memory — what Shift remembers about how you work', done: s.memory },
+        { label: 'Learning — your accept, edit and reject signals', done: s.learning },
+        { label: 'Collective intelligence — patterns from across the family', done: s.genome },
+        { label: 'Semantic recall — Voyage embeddings', done: s.embedding },
+        {
+          label: 'Cross-product bus — LendShift and SurgeShift',
+          done: s.contextGraph && familyBusIsShared(),
+          detail: !s.contextGraph ? 'Not configured'
+            : familyBusIsShared() ? 'Shared family project connected'
+            : 'Product-local: handoffs queue but siblings cannot read them yet',
+        },
+        ...pending.map(e => ({
+          label: `Inbox: ${e.eventType.replace(/_/g, ' ')} from ${e.sourceProduct}`,
+          detail: typeof e.payload.note === 'string' ? e.payload.note : undefined,
+        })),
+      ],
     }],
   }
 }

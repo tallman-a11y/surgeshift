@@ -30,6 +30,50 @@ the market will happily let you book that showing anyway. This one will not: the
 is in `canShowProperty`, called at the moment a showing is requested, and it returns
 `allowed: false`.
 
+## The family
+
+AgentShift is one member of the AllShift family and shares its brain with the others.
+All four layers of `@allshift/core` are wired in:
+
+- **Memory** — what Shift has learned about how this agent works, across sessions
+- **Learning** — their accept / edit / reject signals, and the response style derived
+  from them (heavy editing means "too long", not "wrong")
+- **Genome** — collective patterns distilled across every Shift product
+- **Context graph** — the cross-product bus: a buyer who needs financing is handed to
+  LendShift as a pre-approval lead; a listing going live is handed to SurgeShift for
+  the campaign
+
+The context graph is the piece that did not exist anywhere in the family before —
+the interface had been declared since core 0.4, but every product was falling back to
+`NoOpContextGraph`, so handoffs silently went nowhere.
+
+**It is only genuinely cross-product when it is shared.** Each product has its own
+Supabase project, so migration `003_shift_family.sql` belongs in one shared family
+project that every product points at via `SHIFT_FAMILY_SUPABASE_URL`. Unset, the bus
+runs product-locally: publishing and consuming work, but the siblings cannot read the
+events — and the app says so rather than implying a handoff arrived.
+
+`GET /api/shift/family` reports exactly which layers are live.
+
+Handoffs enforce consent twice over: the receiving product must be one the user has
+connected, and the contact must have recorded written contact consent before their
+details travel anywhere.
+
+## Parking lot
+
+This repo logs to the shared Shift parking lot, the cross-product timeline that lets
+any agent pick up where another left off.
+
+```bash
+npm run catchup                      # open threads for agentshift
+npm run handoff "next: apply 003"    # log a resume point
+npm run hooks                        # install the auto-logging post-commit hook
+```
+
+`scripts/shiftlog.mjs` forwards to the shared helper and tags every entry with this
+product. When the helper is not installed it prints a note and exits 0 — it runs from
+a git hook, and a missing optional tool must never block a commit.
+
 ## Running it
 
 ```bash
@@ -43,7 +87,7 @@ Apply `supabase/migrations/` in order. `001` is the Shift memory spine (needs th
 table keyed to the owning agent.
 
 ```bash
-npm test        # 199 unit tests over the domain logic
+npm test        # 227 unit tests over the domain logic and the family wiring
 npm run lint
 npm run typecheck
 npm run build
